@@ -14,6 +14,8 @@ dependencies = [
     "jinja2>=3.1",
     "fastapi>=0.110",
     "uvicorn>=0.27",
+    "pytz",                 # DuckDB requires pytz for AT TIME ZONE / TIMESTAMPTZ arithmetic
+    "tzdata",               # IANA tz database (Python's zoneinfo on slim Linux images)
 ]
 
 [project.optional-dependencies]
