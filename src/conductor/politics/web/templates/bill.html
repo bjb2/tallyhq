@@ -401,16 +401,45 @@
           margin-top: 4px;
         }
       </style>
-      <div class="timeline">
+      <div class="timeline" data-actions-total="{{ actions|length }}">
         {% for a in actions %}
           {% set stage = stage_for_action(a) %}
-          <div class="tl-row {{ stage }}">
+          <div class="tl-row {{ stage }}"{% if loop.index0 >= 5 %} data-extra="1" hidden{% endif %}>
             <div class="when">{{ a.when.strftime('%b %d, %Y') }}</div>
             <span class="stage-pill">{{ stage }}</span>
             <span class="text">{{ a.text }}</span>
             {% if a.committees %}<div class="committees">{{ a.committees|join(' · ') }}</div>{% endif %}
           </div>
         {% endfor %}
+        {% if actions|length > 5 %}
+          <style>
+            .actions-toggle {
+              display: inline-block;
+              margin: 12px 0 0 -2px;
+              padding: 6px 14px;
+              background: var(--bg-elev-2);
+              border: 1px solid var(--border);
+              border-radius: 999px;
+              color: var(--fg);
+              font-size: 13px;
+              cursor: pointer;
+              font-family: var(--sans);
+            }
+            .actions-toggle:hover { background: var(--bg-elev); border-color: var(--accent); color: var(--accent); }
+          </style>
+          <button type="button" class="actions-toggle"
+                  data-state="collapsed"
+                  data-show="View all {{ actions|length }} actions"
+                  data-hide="Show fewer"
+                  onclick="(function(btn){
+                    var tl = btn.closest('.timeline');
+                    var rows = tl.querySelectorAll('.tl-row[data-extra=&quot;1&quot;]');
+                    var collapsed = btn.dataset.state === 'collapsed';
+                    rows.forEach(function(r){ r.hidden = !collapsed ? true : false; });
+                    btn.dataset.state = collapsed ? 'expanded' : 'collapsed';
+                    btn.textContent = collapsed ? btn.dataset.hide : btn.dataset.show;
+                  })(this)">View all {{ actions|length }} actions</button>
+        {% endif %}
       </div>
     </section>
     {% endif %}
