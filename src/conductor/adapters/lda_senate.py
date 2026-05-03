@@ -66,7 +66,10 @@ def _years_for_congress(congress: int) -> tuple[int, int]:
 @registry.register
 class LdaSenateAdapter(Adapter):
     name = "lda_senate"
-    schema_version = 1
+    # v2 adds `mention_text` to bill_lobbied payloads for match-confidence
+    # scoring. Older v1 events lack the field; lobby_match handles that
+    # gracefully via degraded-mode scoring.
+    schema_version = 2
 
     # Default scope = current congress. Override via class-level set_scope().
     years: tuple[int, ...] = (2025, 2026)
@@ -247,7 +250,9 @@ class LdaSenateAdapter(Adapter):
         activities = filing.get("lobbying_activities") or []
 
         # Aggregate bill refs across activities (and per-activity for bill_lobbied).
-        per_activity_refs: list[tuple[str, list[str]]] = []  # (issue_code, [bill_id...])
+        # Track (issue_code, refs, description) so we can stash mention text
+        # for downstream match-confidence scoring (see lobby_match.py).
+        per_activity_refs: list[tuple[str, list[str], str]] = []
         all_refs: set[str] = set()
         issue_codes_global: set[str] = set()
 
@@ -257,7 +262,7 @@ class LdaSenateAdapter(Adapter):
             if issue:
                 issue_codes_global.add(issue)
             refs = lda_mod.extract_bill_refs(desc, year)
-            per_activity_refs.append((issue, refs))
+            per_activity_refs.append((issue, refs, desc))
             all_refs.update(refs)
 
         bill_refs = sorted(all_refs)
@@ -354,9 +359,17 @@ class LdaSenateAdapter(Adapter):
         # Per-bill issue_codes = the issue codes of activities that referenced it
         for bill_id in bill_refs:
             bill_issues = sorted({
-                issue for (issue, refs) in per_activity_refs
+                issue for (issue, refs, _desc) in per_activity_refs
                 if issue and bill_id in refs
             })
+            # Concatenate descriptions of activities that mentioned this bill,
+            # truncated for storage. Used by lobby_match for title-overlap
+            # scoring on the read path.
+            mentions = [
+                desc for (_issue, refs, desc) in per_activity_refs
+                if desc and bill_id in refs
+            ]
+            mention_text = " | ".join(mentions)[:1500]
             bill_resolved = bills_mod.get(self.store, bill_id) is not None
             payload = {
                 "bill_id": bill_id,
@@ -369,6 +382,7 @@ class LdaSenateAdapter(Adapter):
                 "filing_year": filing.get("filing_year"),
                 "filing_period": filing.get("filing_period"),
                 "issue_codes_for_bill": bill_issues,
+                "mention_text": mention_text,
                 "amount_share": share,
                 "raw_url": raw_url,
             }

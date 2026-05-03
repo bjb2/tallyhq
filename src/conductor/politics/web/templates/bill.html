@@ -580,7 +580,7 @@
         {% for c in lobby_clients %}
         <div class="lobby-row">
           <div class="who">
-            <a href="/lobby/client/{{ c.client_id }}">{{ c.client_name }}</a>
+            <a href="/lobby/client/{{ c.client_id }}">{{ c.client_name }}</a>{% if c.match_band == 'possible' %} <span title="Bill-number match is uncertain — filing description has weak overlap with this bill's title. May be stale boilerplate referencing a previous Congress's bill." style="color: var(--fg-muted); font-size: 11px;">*</span>{% endif %}
             {% if c.issue_codes %}
             <div class="codes">
               {% for code in c.issue_codes %}<span class="code">{{ code }}</span>{% endfor %}

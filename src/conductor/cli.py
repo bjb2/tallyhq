@@ -298,6 +298,96 @@ def cmd_politics_merge_backfill(args, store: Store) -> int:
     return 0
 
 
+def cmd_politics_lobby_validate(args, store: Store) -> int:
+    """Score every bill_lobbied event against its mapped bill and report.
+
+    Identifies likely false positives (regex extracted a bill number that
+    points at the wrong bill in the current Congress, usually because the
+    lobbyist copied stale boilerplate from an earlier Congress).
+    """
+    import json as _json
+    from collections import Counter
+
+    from conductor.politics import lobby_match
+
+    # The legacy `bill_id_resolved` flag in payloads was set at LDA pull time
+    # before bulk-bills had populated the bills table — so it's effectively
+    # always 'false' even when the bill_id IS valid. Join to bills directly
+    # to find the resolvable subset.
+    rows = store.conn.execute(
+        """
+        SELECT
+          json_extract_string(e.payload, '$.bill_id')              AS bill_id,
+          json_extract_string(e.payload, '$.client_name')          AS client_name,
+          json_extract_string(e.payload, '$.issue_codes_for_bill') AS issue_codes_json,
+          json_extract_string(e.payload, '$.mention_text')         AS mention_text
+        FROM events e
+        JOIN bills b ON b.bill_id = json_extract_string(e.payload, '$.bill_id')
+        WHERE e.event_type = 'bill_lobbied'
+        """
+    ).fetchall()
+
+    if not rows:
+        print("no resolved bill_lobbied events to validate")
+        return 0
+
+    # Cache bill lookups — one query per distinct bill_id, not per event.
+    distinct_bills = {r[0] for r in rows if r[0]}
+    bill_meta: dict[str, tuple[str, str]] = {}
+    if distinct_bills:
+        placeholders = ",".join(["?"] * len(distinct_bills))
+        meta_rows = store.conn.execute(
+            f"SELECT bill_id, COALESCE(title,''), COALESCE(policy_area,'') "
+            f"FROM bills WHERE bill_id IN ({placeholders})",
+            list(distinct_bills),
+        ).fetchall()
+        bill_meta = {m[0]: (m[1], m[2]) for m in meta_rows}
+
+    bands = Counter()
+    has_mention_count = 0
+    fp_by_bill: Counter = Counter()
+    fp_examples: dict[str, list[tuple[str, str]]] = {}
+
+    for bill_id, client_name, ic_json, mention in rows:
+        if not bill_id:
+            continue
+        title, policy = bill_meta.get(bill_id, ("", ""))
+        codes: list[str] = []
+        try:
+            codes = _json.loads(ic_json) if ic_json else []
+        except (TypeError, ValueError):
+            codes = []
+        ms = lobby_match.score_match(
+            bill_title=title,
+            bill_policy_area=policy,
+            issue_codes=codes,
+            mention_text=mention or "",
+        )
+        bands[ms.band] += 1
+        if ms.has_mention:
+            has_mention_count += 1
+        if ms.band == "false_positive":
+            fp_by_bill[bill_id] += 1
+            ex = fp_examples.setdefault(bill_id, [])
+            if len(ex) < 3:
+                ex.append((client_name or "?", (mention or "")[:80]))
+
+    total = sum(bands.values())
+    print(f"scored {total} resolved bill_lobbied events")
+    print(f"  with mention text:  {has_mention_count} ({100*has_mention_count/total:.1f}%)")
+    print(f"  confident   (>=.6): {bands['confident']:>7d} ({100*bands['confident']/total:.1f}%)")
+    print(f"  possible (.3-.6):   {bands['possible']:>7d} ({100*bands['possible']/total:.1f}%)")
+    print(f"  false_pos    (<.3): {bands['false_positive']:>7d} ({100*bands['false_positive']/total:.1f}%)")
+    print()
+    print("top 10 bills by false-positive count (likely stale-boilerplate magnets):")
+    for bid, cnt in fp_by_bill.most_common(10):
+        title, _ = bill_meta.get(bid, ("", ""))
+        print(f"  {cnt:>5d}  {bid:<14}  {title[:70]}")
+        for client, snippet in fp_examples.get(bid, []):
+            print(f"           ↳ {client[:40]:<40}  {snippet}")
+    return 0
+
+
 def cmd_politics_backfill_crec(args, store: Store) -> int:
     """Backfill GovInfo Congressional Record floor-speech metadata to a sidecar DB.
 
@@ -564,6 +654,12 @@ def build_parser() -> argparse.ArgumentParser:
                          help="comma-list (hr,s,hjres,sjres,hconres,sconres,hres,sres) or 'all'")
     pp_bulk.add_argument("--concurrency", type=int, default=24)
     pp_bulk.set_defaults(func=cmd_politics_bulk_bills)
+
+    pp_lv = psub.add_parser(
+        "lobby-validate",
+        help="score bill_lobbied events vs bill metadata; report false-positive rate",
+    )
+    pp_lv.set_defaults(func=cmd_politics_lobby_validate)
 
     pp_bfcrec = psub.add_parser(
         "backfill-crec",

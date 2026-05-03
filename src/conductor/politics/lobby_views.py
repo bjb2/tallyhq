@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Optional
 
+from conductor.politics import lobby_match
 from conductor.store import Store
 
 
@@ -23,6 +24,8 @@ class ClientLobbyOnBill:
     total_amount: float
     issue_codes: list[str]
     latest_period: str   # "2026 Q1"
+    match_confidence: float = 0.0   # max score across this client's filings on this bill
+    match_band: str = "false_positive"  # "confident" | "possible" | "false_positive"
 
 
 @dataclass
@@ -38,10 +41,28 @@ class LobbiedBill:
     distinct_clients: int
 
 
-def top_clients_for_bill(store: Store, bill_id: str, limit: int = 10) -> list[ClientLobbyOnBill]:
-    """For a bill, list top clients lobbying on it, ranked by filing count."""
+def top_clients_for_bill(
+    store: Store,
+    bill_id: str,
+    limit: int = 10,
+    min_confidence: float = lobby_match.THRESHOLD_BILL_PAGE_POSSIBLE,
+) -> list[ClientLobbyOnBill]:
+    """For a bill, list top clients lobbying on it, ranked by filing count.
+
+    Computes a match-confidence score per client (max across their
+    filings) using `lobby_match.score_match`. Filings whose extracted
+    bill ref likely points at the wrong bill (e.g. stale boilerplate
+    from a previous Congress) are filtered out by `min_confidence`.
+    Pass `min_confidence=0.0` to disable filtering.
+    """
+    # Load the bill once for scoring (title + policy_area).
+    from conductor.politics import bills as bills_mod
+    bill = bills_mod.get(store, bill_id)
+    bill_title = bill.title if bill else ""
+    bill_policy = bill.policy_area if bill else ""
+
     rows = store.conn.execute(
-        f"""
+        """
         SELECT
           json_extract_string(payload, '$.client_id')   AS client_id,
           json_extract_string(payload, '$.client_name') AS client_name,
@@ -54,7 +75,6 @@ def top_clients_for_bill(store: Store, bill_id: str, limit: int = 10) -> list[Cl
           AND json_extract_string(payload, '$.bill_id') = ?
         GROUP BY client_id, client_name
         ORDER BY filings DESC, total_amount DESC NULLS LAST
-        LIMIT {int(limit)}
         """,
         [bill_id],
     ).fetchall()
@@ -62,10 +82,13 @@ def top_clients_for_bill(store: Store, bill_id: str, limit: int = 10) -> list[Cl
     for r in rows:
         if not r[0]:
             continue
-        # Most common issue codes for this client on this bill
+        # Pull issue codes + mention text per filing so we can score each
+        # and take the max. (A client may have one good filing and 5 stale
+        # ones — the good one establishes legitimate interest in the bill.)
         ic_rows = store.conn.execute(
             """
-            SELECT json_extract_string(payload, '$.issue_codes_for_bill')
+            SELECT json_extract_string(payload, '$.issue_codes_for_bill'),
+                   json_extract_string(payload, '$.mention_text')
             FROM events
             WHERE event_type = 'bill_lobbied'
               AND json_extract_string(payload, '$.bill_id') = ?
@@ -75,12 +98,29 @@ def top_clients_for_bill(store: Store, bill_id: str, limit: int = 10) -> list[Cl
             [bill_id, r[0]],
         ).fetchall()
         codes_set: set[str] = set()
-        for (ic,) in ic_rows:
+        best_score = 0.0
+        best_band = "false_positive"
+        for ic, mention in ic_rows:
+            codes: list[str] = []
             try:
-                for code in (json.loads(ic) if ic else []):
-                    codes_set.add(code)
+                codes = json.loads(ic) if ic else []
             except (TypeError, ValueError):
-                pass
+                codes = []
+            for code in codes:
+                codes_set.add(code)
+            ms = lobby_match.score_match(
+                bill_title=bill_title,
+                bill_policy_area=bill_policy,
+                issue_codes=codes,
+                mention_text=mention or "",
+            )
+            if ms.score > best_score:
+                best_score = ms.score
+                best_band = ms.band
+
+        if best_score < min_confidence:
+            continue
+
         period_label = ""
         if r[4] and r[5]:
             qmap = {
@@ -95,7 +135,11 @@ def top_clients_for_bill(store: Store, bill_id: str, limit: int = 10) -> list[Cl
             total_amount=float(r[3] or 0),
             issue_codes=sorted(codes_set)[:6],
             latest_period=period_label,
+            match_confidence=best_score,
+            match_band=best_band,
         ))
+        if len(out) >= limit:
+            break
     return out
 
 
