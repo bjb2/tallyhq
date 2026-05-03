@@ -104,6 +104,38 @@ def _fetch_bill_actions(store: Store, bill_id: str) -> list[dict]:
     return [grouped[k] for k in order]
 
 
+def _format_text_versions(versions: list[dict] | None) -> list[dict]:
+    """Sort newest-first + add a human-readable `date_label`.
+
+    govinfo emits dates like "2025-07-01T04:00:00Z" (ISO). We render
+    "Jul 01, 2025" for display; missing dates sort to the end (so
+    Enrolled Bill / Public Law without dates aren't artificially #1).
+    """
+    if not versions:
+        return []
+    from datetime import datetime as _dt
+
+    def _parse(d: str | None):
+        if not d:
+            return None
+        try:
+            return _dt.fromisoformat(str(d).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    out = []
+    for v in versions:
+        parsed = _parse(v.get("date"))
+        out.append({
+            **v,
+            "_sort": parsed,
+            "date_label": parsed.strftime("%b %d, %Y") if parsed else "—",
+        })
+    # Newest first; None dates last
+    out.sort(key=lambda x: (x["_sort"] is None, -(x["_sort"].timestamp() if x["_sort"] else 0)))
+    return out
+
+
 def _stage_for_action(action: dict) -> str:
     """Classify an action into one of: introduced, committee, floor, passed,
     sent, signed, vetoed, other. Used by the timeline to color stage bands.
@@ -578,11 +610,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             tallies = bill_views.rollcall_tallies(store, bill_id)
             actions = _fetch_bill_actions(store, bill_id)
             lobby_clients = lobby_views.top_clients_for_bill(store, bill_id, limit=10)
+            text_versions = _format_text_versions(b.text_versions)
         finally:
             store.close()
         tmpl = env.get_template("bill.html")
         return tmpl.render(
             bill=b,
+            text_versions=text_versions,
             bill_stub=None,
             sponsor=sponsor,
             cosponsors=cosponsors,
