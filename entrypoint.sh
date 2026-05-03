@@ -16,10 +16,15 @@ DB_PATH="${CONDUCTOR_DB:-/data/conductor.duckdb}"
 DB_DIR="$(dirname "$DB_PATH")"
 mkdir -p "$DB_DIR"
 
-# Marker file indicates a force-seed has already been applied on this volume.
-# Once written, future boots skip the force-seed branch even if SEED_DB_FORCE=1
-# stays set — so leaving the env var on doesn't re-download every restart.
-FORCE_MARKER="$DB_DIR/.seed-force-applied"
+# Marker filename encodes a hash of the current $SEED_DB_URL. Bumping the URL
+# (e.g. seed-v2 → seed-v3 with revalidated lobbying data) invalidates the old
+# marker → re-fetch fires once. Same URL across restarts → marker present → skip.
+URL_HASH="static"
+if [ -n "$SEED_DB_URL" ] && command -v sha256sum > /dev/null; then
+    URL_HASH=$(printf "%s" "$SEED_DB_URL" | sha256sum | cut -d' ' -f1 | head -c 16)
+fi
+FORCE_MARKER="$DB_DIR/.seed-applied-$URL_HASH"
+LEGACY_MARKER="$DB_DIR/.seed-force-applied"
 
 # Empty schema-only DuckDB ~12 KB; real seeded one is many MB.
 MIN_VALID_BYTES=1048576
@@ -29,7 +34,10 @@ if [ -f "$DB_PATH" ]; then
     EXISTING_SIZE=$(stat -c%s "$DB_PATH" 2>/dev/null || echo 0)
 fi
 
-# Resolve which branch to take.
+# Force-seed when SEED_DB_FORCE=1 + URL set + URL-hashed marker absent.
+# Changing $SEED_DB_URL automatically triggers re-fetch (different hash, no marker).
+# Legacy non-hashed marker is ignored — first boot under new entrypoint may
+# re-fetch once, then settles. Marker is cleaned up below.
 SHOULD_FORCE_SEED=0
 if [ "$SEED_DB_FORCE" = "1" ] && [ -n "$SEED_DB_URL" ] && [ ! -f "$FORCE_MARKER" ]; then
     SHOULD_FORCE_SEED=1
@@ -47,7 +55,9 @@ if [ "$SHOULD_FORCE_SEED" = "1" ]; then
     mv "$DB_PATH.partial" "$DB_PATH"
     SIZE=$(stat -c%s "$DB_PATH" 2>/dev/null || echo 0)
     echo "[entrypoint] force-seeded DB ($SIZE bytes)"
-    # Write marker so we never re-force-seed this volume even if env var stays set.
+    # Write URL-hashed marker so we never re-force-seed this volume for the
+    # same URL. Cleanup any old hash markers + legacy marker from prior URLs.
+    rm -f "$DB_DIR"/.seed-applied-* "$LEGACY_MARKER" 2>/dev/null
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "$FORCE_MARKER"
     echo "[entrypoint] marker written: $FORCE_MARKER"
 elif [ "$EXISTING_SIZE" -ge "$MIN_VALID_BYTES" ]; then
