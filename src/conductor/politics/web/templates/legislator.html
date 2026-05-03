@@ -22,17 +22,24 @@
     max-width: 100%;
   }
   @media (max-width: 800px) {
+    .profile, .sidebar, .content { min-width: 0; max-width: 100%; }
+    .sidebar > * { min-width: 0; max-width: 100%; }
+
     .photo { width: 140px; height: 140px; margin: 0 auto 12px; }
-    .name-row { justify-content: center; text-align: center; }
+    .name-row { justify-content: center; text-align: center; flex-wrap: wrap; }
     .name { font-size: 20px; }
     .login { text-align: center; font-size: 14px; }
-    .bio { text-align: center; font-size: 13px; }
+    .bio { text-align: center; font-size: 13px; word-wrap: break-word; }
 
-    .meta-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 12px; font-size: 12px; }
-    .meta-list div { padding: 3px 0; }
+    .meta-list { display: grid; grid-template-columns: 1fr; gap: 0; font-size: 12px; }
+    .meta-list div {
+      padding: 3px 0; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .meta-list a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta-list svg { width: 12px; height: 12px; }
 
-    /* Tabs scroll horizontally — bleed-through edges so they feel scrollable */
+    /* Tabs scroll horizontally */
     .tabs {
       overflow-x: auto;
       flex-wrap: nowrap;
@@ -47,45 +54,52 @@
 
     /* Stats strip — 2-col tight */
     .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
-    .stat { padding: 8px 12px; }
+    .stat { padding: 8px 12px; min-width: 0; }
     .stat .val { font-size: 16px; }
     .stat .lbl { font-size: 10px; }
-    .stat .sub { font-size: 11px; }
+    .stat .sub { font-size: 11px; word-wrap: break-word; }
 
-    /* Activity card — shrink padding, scale SVG, hide range selector spillover */
-    .activity-card { padding: 12px; }
+    /* Activity card — shrink padding, scale SVG to fit container */
+    .activity-card { padding: 12px; min-width: 0; }
     .activity-card h2 { font-size: 13px; }
     .activity-card h2 .total { display: block; margin-top: 4px; margin-left: 0; }
-    .grid-host { padding: 4px 0; overflow-x: auto; }
-    .grid-host svg { max-width: 100%; height: auto; min-width: 540px; }
+    .grid-host { padding: 4px 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .grid-host svg { max-width: 100%; height: auto; }
 
     /* Recent-activity rows — stack date above title */
     .timeline h2 { font-size: 15px; }
+    .timeline .card { min-width: 0; }
     .ev {
       grid-template-columns: 1fr;
       grid-template-rows: auto auto;
       grid-row-gap: 4px;
       padding: 10px 12px;
+      min-width: 0;
     }
     .ev .when { font-size: 11px; }
-    .ev .what { font-size: 13px; white-space: normal; line-height: 1.35; }
+    .ev .what { font-size: 13px; white-space: normal; line-height: 1.35; word-wrap: break-word; }
     .ev > span:last-child { justify-self: start; }
 
-    /* Speech rows — single column with date as caption */
     .speech-row {
       grid-template-columns: 1fr;
       grid-template-rows: auto auto;
       grid-row-gap: 4px;
       padding: 10px 12px;
+      min-width: 0;
     }
     .speech-row .when { font-size: 11px; }
+    .speech-row .title { word-wrap: break-word; white-space: normal; }
 
-    /* Funding + committees blocks */
+    /* Funding + committees */
     .funding-block, .committee-block { margin-top: 16px; }
+    .funding-block .fund-empty {
+      font-size: 12px;
+      word-wrap: break-word;
+    }
     .fund-row { padding: 8px 10px; }
     .fund-row .receipts { font-size: 18px; }
+    .committee-block li { word-wrap: break-word; white-space: normal; }
 
-    /* Pills sit on their own row */
     .pill { font-size: 10px; padding: 2px 8px; }
   }
 
