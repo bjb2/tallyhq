@@ -290,6 +290,102 @@ def _aggregate_stats(store: Store, bioguide_ids: list[str]) -> dict:
     }
 
 
+def _day_payload(store: Store, day: str, *, entity_filter: str | None, limit: int) -> JSONResponse:
+    """Aggregate events that occurred on ``day`` (ISO YYYY-MM-DD, UTC).
+
+    Optionally restricts to a single entity (e.g. "bioguide:X000000"). Returns
+    grouped items + per-type counts. Used by both /api/day/site and
+    /api/day/legislator endpoints.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+
+    try:
+        d = _dt.strptime(day, "%Y-%m-%d").date()
+    except ValueError:
+        store.close()
+        raise HTTPException(400, f"bad date: {day}")
+
+    try:
+        params: list = [d, d + timedelta(days=1)]
+        where = "CAST(occurred_at AT TIME ZONE 'UTC' AS DATE) >= ? AND CAST(occurred_at AT TIME ZONE 'UTC' AS DATE) < ?"
+        if entity_filter:
+            where += " AND entity_id = ?"
+            params.append(entity_filter)
+        else:
+            where += " AND entity_id LIKE 'bioguide:%'"
+
+        rows = store.conn.execute(
+            f"""
+            SELECT occurred_at, entity_id, event_type, payload
+            FROM events
+            WHERE {where}
+            ORDER BY occurred_at DESC
+            """,
+            params,
+        ).fetchall()
+
+        # Resolve legislator names in one pass for site-wide scope
+        bioguides_seen: set[str] = set()
+        for _, entity_id, _, _ in rows:
+            if entity_id and entity_id.startswith("bioguide:"):
+                bioguides_seen.add(entity_id.split(":", 1)[1])
+        name_map: dict[str, dict] = {}
+        for bg in bioguides_seen:
+            ent = entities.get(store, bg)
+            if ent:
+                name_map[bg] = {
+                    "bioguide": bg,
+                    "name": ent.full_name,
+                    "party": (ent.party[0] if ent.party else "I"),
+                    "url": f"/legislator/{bg}",
+                }
+
+        from conductor.politics.bills import parse_legis_num
+        counts: dict[str, int] = {}
+        items: list[dict] = []
+        for occ, entity_id, etype, payload in rows:
+            counts[etype] = counts.get(etype, 0) + 1
+            if len(items) >= limit:
+                continue
+            pl = _json.loads(payload) if isinstance(payload, str) else (payload or {})
+            who = None
+            if entity_id and entity_id.startswith("bioguide:"):
+                who = name_map.get(entity_id.split(":", 1)[1])
+            item = {
+                "event_type": etype,
+                "when": occ.isoformat() if hasattr(occ, "isoformat") else str(occ),
+                "who": who,
+                "title": pl.get("title") or pl.get("question") or "",
+                "position": pl.get("position"),
+                "party_line": pl.get("party_line"),
+            }
+            # Bill / roll-call linkbacks
+            bid = pl.get("bill_id")
+            if bid and ":" in bid:
+                parts = bid.split(":")
+                if len(parts) == 3:
+                    item["bill_url"] = f"/bill/{parts[0]}/{parts[1]}/{parts[2]}"
+                    item["bill_label"] = f"{parts[1].upper()} {parts[2]}"
+            elif pl.get("legis_num") and pl.get("congress"):
+                parsed = parse_legis_num(pl.get("legis_num"))
+                if parsed:
+                    item["bill_url"] = f"/bill/{pl['congress']}/{parsed[0]}/{parsed[1]}"
+                    item["bill_label"] = pl.get("legis_num")
+            items.append(item)
+    finally:
+        store.close()
+
+    return JSONResponse({
+        "date": d.isoformat(),
+        "scope": entity_filter or "site",
+        "total": sum(counts.values()),
+        "counts": counts,
+        "items": items,
+        "truncated": sum(counts.values()) > len(items),
+    })
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="TallyHQ", docs_url="/docs")
     env = _env()
@@ -311,7 +407,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             totals = landing_mod.totals(store)
             term = _congress_term_context()
             agg = landing_mod.aggregate_grid(store, days=180)
-            agg_svg = render_svg(agg, cell_size=22, cell_gap=4)
+            agg_svg = render_svg(agg, cell_size=22, cell_gap=4, interactive=True)
             pulse = landing_mod.pulse_stats(store, days=180)
             recent_bills = landing_mod.recent_bills(store, limit=8)
             top_cosponsored = landing_mod.most_cosponsored(store, limit=5)
@@ -396,7 +492,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             end = date.today()
             start = end - timedelta(days=days)
             row = grid(store, ent.entity_id, start, end)
-            svg = render_svg(row)
+            svg = render_svg(row, interactive=True)
             stats = stats_mod.compute(store, ent.entity_id)
             committees = committees_mod.member_committees(store, ent.bioguide_id)
             funding_rows = funding_mod.for_member(store, ent.bioguide_id)
@@ -963,5 +1059,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             "party": ent.party,
             "grid": row.to_dict(),
         })
+
+    @app.get("/api/day/site/{day}")
+    def api_day_site(day: str, limit: int = Query(40, ge=1, le=200)):
+        return _day_payload(get_store(), day, entity_filter=None, limit=limit)
+
+    @app.get("/api/day/legislator/{bioguide}/{day}")
+    def api_day_legislator(bioguide: str, day: str, limit: int = Query(80, ge=1, le=400)):
+        return _day_payload(get_store(), day, entity_filter=f"bioguide:{bioguide}", limit=limit)
 
     return app

@@ -68,7 +68,9 @@
     .activity-card h2 { font-size: 13px; }
     .activity-card h2 .total { display: block; margin-top: 4px; margin-left: 0; }
     .grid-host { padding: 4px 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .grid-host svg { max-width: 100%; height: auto; }
+    /* Keep cells at natural size on mobile so day-squares stay tappable;
+       the host scrolls horizontally instead of shrinking each cell. */
+    .grid-host svg { height: auto; }
 
     /* Recent-activity rows — stack date above title */
     .timeline h2 { font-size: 15px; }
@@ -472,7 +474,7 @@
         Activity over the last year
         <span class="total">{{ '%.1f'|format(grid.total) }} intensity points</span>
       </h2>
-      <div class="grid-host">{{ svg|safe }}</div>
+      <div class="grid-host" data-day-scope="legislator:{{ entity.bioguide_id }}">{{ svg|safe }}</div>
       <div class="legend">
         Less
         <span class="scale">

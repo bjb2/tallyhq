@@ -46,8 +46,14 @@ def render_svg(
     label_dow: bool = True,
     label_months: bool = True,
     text_color: str = "#5e5a52",
+    interactive: bool = False,
 ) -> str:
-    """SVG contribution graph. Light palette by default."""
+    """SVG contribution graph. Light palette by default.
+
+    When ``interactive`` is True, cells with band > 0 carry ``class="day-cell"``
+    and ``cursor:pointer`` so a JS handler bound on the SVG host can drill
+    into the day's contributing events via ``data-day``.
+    """
     palette = palette or PALETTE_LIGHT
     cells_by_day = {c.day: c for c in row.cells}
 
@@ -99,9 +105,12 @@ def render_svg(
                 f"{d.isoformat()} · intensity {cell.intensity:.1f} · {cell.count} events"
                 if cell else d.isoformat()
             )
+            extra = ""
+            if interactive and cell and cell.band > 0:
+                extra = ' class="day-cell" style="cursor:pointer"'
             parts.append(
                 f'<rect x="{x}" y="{y}" width="{cell_size}" height="{cell_size}" '
-                f'rx="2" ry="2" fill="{color}" data-day="{d.isoformat()}">'
+                f'rx="2" ry="2" fill="{color}" data-day="{d.isoformat()}"{extra}>'
                 f'<title>{tip}</title></rect>'
             )
         cur += timedelta(days=7)

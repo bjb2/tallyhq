@@ -314,6 +314,142 @@
   .faint { color: var(--fg-faint); }
   .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
   .stack { display: flex; flex-direction: column; gap: 4px; }
+
+  /* Day-detail side panel — drill into a day-cell click */
+  .day-cell:hover { stroke: var(--fg); stroke-width: 1.5; }
+  .day-panel {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(440px, 92vw);
+    background: var(--bg-elev);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    z-index: 50;
+    transform: translateX(100%);
+    transition: transform 180ms ease-out;
+    display: flex;
+    flex-direction: column;
+  }
+  .day-panel[data-open="1"] { transform: translateX(0); }
+  .day-panel header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .day-panel header .when {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .day-panel header .scope {
+    color: var(--fg-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .day-panel header button.close {
+    background: transparent;
+    border: none;
+    color: var(--fg-muted);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  .day-panel header button.close:hover { color: var(--fg); }
+  .day-panel .summary {
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .day-panel .summary .pill {
+    background: var(--bg-elev-2);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11px;
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .day-panel .body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .day-panel .ev-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 10px 18px;
+    border-top: 1px solid var(--border-muted);
+    font-size: 13px;
+  }
+  .day-panel .ev-row:first-child { border-top: none; }
+  .day-panel .ev-row .what { min-width: 0; }
+  .day-panel .ev-row .who {
+    color: var(--fg);
+    font-weight: 500;
+    font-size: 12px;
+  }
+  .day-panel .ev-row .who .badge { margin-left: 4px; }
+  .day-panel .ev-row .meta { color: var(--fg-muted); font-size: 12px; margin-top: 2px; word-wrap: break-word; }
+  .day-panel .ev-row .pill {
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    align-self: start;
+    white-space: nowrap;
+  }
+  .day-panel .pill.Yea { background: #e6f4ea; color: #1a7f37; border: 1px solid #c7e4c8; }
+  .day-panel .pill.Nay { background: #fceaea; color: #b62428; border: 1px solid #f3c8c8; }
+  .day-panel .pill.break { background: #fff4d6; color: #8a5a00; border: 1px solid #f0d97e; }
+  .day-panel .empty,
+  .day-panel .loading {
+    padding: 24px 18px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    font-style: italic;
+    text-align: center;
+  }
+  .day-panel .truncated {
+    padding: 10px 18px;
+    color: var(--fg-muted);
+    font-size: 11px;
+    border-top: 1px solid var(--border-muted);
+    text-align: center;
+  }
+  .day-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 20, 20, 0.18);
+    z-index: 49;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms;
+  }
+  .day-backdrop[data-open="1"] { opacity: 1; pointer-events: auto; }
+
+  /* Larger tap area on touch devices — fattens the rect's apparent hit
+     box without changing the painted size. Pointer-events bounding-box is
+     not universal; transparent stroke is the portable trick. */
+  rect.day-cell { stroke: transparent; stroke-width: 4; touch-action: manipulation; }
+
+  @media (max-width: 720px) {
+    .day-panel { width: 100vw; border-left: none; }
+    .day-panel header { padding: 12px 14px; }
+    .day-panel header .when { font-size: 16px; }
+    .day-panel header button.close { font-size: 26px; padding: 4px 8px; }
+    .day-panel .summary { padding: 8px 14px; }
+    .day-panel .ev-row { padding: 10px 14px; }
+  }
 </style>
 </head>
 <body>
@@ -350,6 +486,19 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+
+<div class="day-backdrop" id="day-backdrop"></div>
+<aside class="day-panel" id="day-panel" aria-hidden="true">
+  <header>
+    <div>
+      <div class="when" id="day-panel-when">—</div>
+      <div class="scope" id="day-panel-scope"></div>
+    </div>
+    <button class="close" id="day-panel-close" aria-label="Close">×</button>
+  </header>
+  <div class="summary" id="day-panel-summary"></div>
+  <div class="body" id="day-panel-body"></div>
+</aside>
 <script>
 (function () {
   const input = document.getElementById('ac-input');
@@ -472,6 +621,144 @@
   });
   document.addEventListener('click', (e) => {
     if (!pop.contains(e.target) && e.target !== input) close();
+  });
+})();
+
+// Day-detail side panel — drill into a heatmap cell
+(function () {
+  const panel = document.getElementById('day-panel');
+  const backdrop = document.getElementById('day-backdrop');
+  const closeBtn = document.getElementById('day-panel-close');
+  const whenEl = document.getElementById('day-panel-when');
+  const scopeEl = document.getElementById('day-panel-scope');
+  const summaryEl = document.getElementById('day-panel-summary');
+  const bodyEl = document.getElementById('day-panel-body');
+  if (!panel) return;
+
+  function escapeHtml(s) {
+    return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function fmtDate(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function open() {
+    panel.setAttribute('data-open', '1');
+    backdrop.setAttribute('data-open', '1');
+    panel.setAttribute('aria-hidden', 'false');
+  }
+  function close() {
+    panel.removeAttribute('data-open');
+    backdrop.removeAttribute('data-open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && panel.hasAttribute('data-open')) close();
+  });
+
+  // Pretty event-type label
+  const TYPE_LABEL = {
+    'vote.cast': 'Vote',
+    'vote.missed': 'Missed',
+    'bill.sponsored': 'Sponsored',
+    'bill.cosponsored': 'Cosponsored',
+    'bill.action': 'Bill action',
+    'floor.speech': 'Speech',
+    'floor.amendment_offered': 'Amendment',
+    'committee.markup_vote': 'Committee vote',
+    'committee.hearing_attended': 'Hearing',
+    'lda.filing': 'LDA filing',
+  };
+  function typeLabel(t) { return TYPE_LABEL[t] || t; }
+
+  function renderItem(item, scopeIsSite) {
+    const parts = [];
+    parts.push('<div class="what">');
+    if (scopeIsSite && item.who) {
+      parts.push(
+        `<a class="who" href="${escapeHtml(item.who.url)}">${escapeHtml(item.who.name)}` +
+        `<span class="badge ${escapeHtml(item.who.party)}">${escapeHtml(item.who.party)}</span></a>`
+      );
+    }
+    let main = '<div class="meta">';
+    main += `<span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(typeLabel(item.event_type))}</span>`;
+    if (item.bill_url) {
+      main += ` · <a href="${escapeHtml(item.bill_url)}"><strong>${escapeHtml(item.bill_label)}</strong></a>`;
+    }
+    if (item.title) {
+      main += ` — ${escapeHtml(item.title.length > 140 ? item.title.slice(0, 140) + '…' : item.title)}`;
+    }
+    main += '</div>';
+    parts.push(main);
+    parts.push('</div>');
+    let pill = '';
+    if (item.position === 'Yea' || item.position === 'Nay') {
+      pill = `<span class="pill ${escapeHtml(item.position)}">${escapeHtml(item.position)}</span>`;
+    }
+    if (item.party_line === false) {
+      pill += '<span class="pill break" style="margin-left:4px;">break</span>';
+    }
+    parts.push(pill || '<span></span>');
+    return `<div class="ev-row">${parts.join('')}</div>`;
+  }
+
+  async function loadDay(scope, day) {
+    open();
+    whenEl.textContent = fmtDate(day);
+    scopeEl.textContent = scope === 'site' ? 'Capitol-wide' : 'Legislator';
+    summaryEl.innerHTML = '';
+    bodyEl.innerHTML = '<div class="loading">Loading…</div>';
+    let url;
+    if (scope === 'site') {
+      url = `/api/day/site/${encodeURIComponent(day)}`;
+    } else {
+      // scope: "legislator:BIOGUIDE"
+      const bg = scope.split(':', 2)[1];
+      url = `/api/day/legislator/${encodeURIComponent(bg)}/${encodeURIComponent(day)}`;
+    }
+    try {
+      const r = await fetch(url, { credentials: 'omit' });
+      if (!r.ok) { bodyEl.innerHTML = '<div class="empty">Failed to load.</div>'; return; }
+      const data = await r.json();
+      const sumParts = [];
+      const labels = Object.keys(data.counts || {}).sort((a, b) => data.counts[b] - data.counts[a]);
+      for (const t of labels) {
+        sumParts.push(`<span class="pill">${escapeHtml(typeLabel(t))} · ${data.counts[t]}</span>`);
+      }
+      summaryEl.innerHTML = sumParts.length
+        ? sumParts.join('')
+        : '<span>No recorded activity.</span>';
+      const scopeIsSite = scope === 'site';
+      if (!data.items || !data.items.length) {
+        bodyEl.innerHTML = '<div class="empty">No recorded activity for this day.</div>';
+        return;
+      }
+      const rows = data.items.map(it => renderItem(it, scopeIsSite));
+      if (data.truncated) {
+        rows.push(`<div class="truncated">Showing ${data.items.length} of ${data.total} events.</div>`);
+      }
+      bodyEl.innerHTML = rows.join('');
+    } catch (e) {
+      bodyEl.innerHTML = '<div class="empty">Network error.</div>';
+    }
+  }
+
+  // Click delegation on any host with data-day-scope. Empty days (band 0)
+  // do not carry .day-cell — click is a no-op.
+  document.addEventListener('click', (e) => {
+    const cell = e.target.closest && e.target.closest('rect.day-cell');
+    if (!cell) return;
+    const host = cell.closest('[data-day-scope]');
+    if (!host) return;
+    const day = cell.getAttribute('data-day');
+    const scope = host.getAttribute('data-day-scope');
+    if (!day || !scope) return;
+    loadDay(scope, day);
   });
 })();
 </script>
