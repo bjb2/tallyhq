@@ -581,6 +581,76 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         tmpl = env.get_template("rollcall.html")
         return tmpl.render(d=d, photo=lambda b: photo_url(b, "225x275"))
 
+    @app.get("/api/search")
+    def api_search(q: str = Query("", max_length=80), limit: int = Query(8, ge=1, le=20)):
+        """Combined autocomplete — members + bills.
+
+        Members: substring match on full_name OR last_name OR state.
+        Bills:   substring match on title (LOWER), capped to current Congress.
+        Cheap at our scale; no FTS needed.
+        """
+        ql = q.strip().lower()
+        if not ql or len(ql) < 2:
+            return JSONResponse({"members": [], "bills": [], "q": q})
+
+        store = get_store()
+        try:
+            # Members — pull full roster, filter in Python (small N)
+            members_rows = store.conn.execute(
+                """
+                SELECT bioguide_id, full_name, last_name, party, state, district, chamber
+                FROM legislators
+                WHERE LOWER(full_name) LIKE ?
+                   OR LOWER(last_name) LIKE ?
+                   OR LOWER(state) = ?
+                ORDER BY chamber, last_name
+                LIMIT ?
+                """,
+                [f"%{ql}%", f"%{ql}%", ql, limit],
+            ).fetchall()
+            members = [
+                {
+                    "bioguide": r[0],
+                    "name": r[1],
+                    "party": r[3] or "",
+                    "party_letter": (r[3][0] if r[3] else "I"),
+                    "state": r[4] or "",
+                    "district": int(r[5]) if r[5] is not None and r[5] != 0 else None,
+                    "chamber": r[6] or "",
+                    "photo_url": photo_url(r[0], "225x275"),
+                    "url": f"/legislator/{r[0]}",
+                }
+                for r in members_rows
+            ]
+
+            # Bills — substring on title, prefer recent activity
+            bills_rows = store.conn.execute(
+                """
+                SELECT bill_id, congress, bill_type, number, title,
+                       sponsor_bioguide, cosponsor_count, latest_action_date
+                FROM bills
+                WHERE LOWER(title) LIKE ?
+                ORDER BY COALESCE(latest_action_date, introduced_date) DESC NULLS LAST
+                LIMIT ?
+                """,
+                [f"%{ql}%", limit],
+            ).fetchall()
+            bills = [
+                {
+                    "bill_id": r[0],
+                    "congress": int(r[1]),
+                    "bill_type": r[2],
+                    "number": int(r[3]),
+                    "title": (r[4] or "")[:140],
+                    "cosponsor_count": int(r[6] or 0),
+                    "url": f"/bill/{r[1]}/{r[2]}/{r[3]}",
+                }
+                for r in bills_rows
+            ]
+        finally:
+            store.close()
+        return JSONResponse({"members": members, "bills": bills, "q": q})
+
     @app.get("/photo/{bioguide}")
     def photo(bioguide: str, size: str = "225x275"):
         if size not in ("original", "450x550", "225x275"):

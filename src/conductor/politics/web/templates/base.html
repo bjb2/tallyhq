@@ -110,6 +110,109 @@
   }
   header.site .search:focus { outline: none; border-color: var(--accent); background: #fff; }
 
+  /* Search autocomplete */
+  .search-wrap { position: relative; display: inline-block; }
+  .ac-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: min(440px, 90vw);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    z-index: 100;
+    max-height: 70vh;
+    overflow-y: auto;
+    display: none;
+  }
+  .ac-pop[data-open="1"] { display: block; }
+  .ac-section + .ac-section { border-top: 1px solid var(--border-muted); }
+  .ac-section h5 {
+    margin: 0;
+    padding: 8px 14px 4px;
+    font-family: var(--sans);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    font-weight: 600;
+  }
+  .ac-item {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    column-gap: 10px;
+    align-items: center;
+    padding: 8px 14px;
+    color: var(--fg);
+    border-left: 2px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .ac-item.bill { grid-template-columns: 44px 1fr; }
+  .ac-item:hover, .ac-item[data-active="1"] {
+    background: var(--bg-elev-2);
+    border-left-color: var(--accent);
+    text-decoration: none;
+  }
+  .ac-item .ph {
+    width: 36px; height: 44px;
+    border-radius: 4px;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    border: 1px solid var(--border-muted);
+  }
+  .ac-item .label { min-width: 0; overflow: hidden; }
+  .ac-item .name {
+    font-size: 13px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ac-item .meta {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ac-item .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    background: var(--bg-elev-2);
+    border-radius: 4px;
+    padding: 4px 0;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .ac-item .num strong { display: block; color: var(--fg); font-size: 10px; }
+  .ac-empty, .ac-loading {
+    padding: 14px 16px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    font-style: italic;
+  }
+  .ac-footer {
+    border-top: 1px solid var(--border-muted);
+    padding: 6px 14px;
+    color: var(--fg-muted);
+    font-size: 11px;
+    text-align: right;
+  }
+  .ac-footer kbd {
+    font-family: var(--mono);
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 10px;
+  }
+
   /* Mobile header */
   @media (max-width: 720px) {
     header.site {
@@ -217,13 +320,144 @@
     <a href="/browse">Members</a>
     <a href="/bills">Bills</a>
   </nav>
-  <form method="get" action="/" class="grow">
-    <input class="search" type="search" name="q" placeholder="Search legislators…" value="{{ (q or '')|e }}" />
+  <form method="get" action="/browse" class="grow" id="ac-form">
+    <div class="search-wrap">
+      <input class="search" type="search" name="q" id="ac-input"
+             placeholder="Search members or bills…"
+             value="{{ (q or '')|e }}"
+             autocomplete="off" spellcheck="false" />
+      <div class="ac-pop" id="ac-pop" role="listbox"></div>
+    </div>
   </form>
   <a class="muted" href="https://github.com/bjb2/tallyhq" target="_blank" rel="noopener">github</a>
 </header>
 <main>
 {% block content %}{% endblock %}
 </main>
+<script>
+(function () {
+  const input = document.getElementById('ac-input');
+  const pop = document.getElementById('ac-pop');
+  const form = document.getElementById('ac-form');
+  if (!input || !pop || !form) return;
+
+  let lastQ = '';
+  let timer = null;
+  let activeIdx = -1;
+  let items = [];
+
+  function close() {
+    pop.removeAttribute('data-open');
+    activeIdx = -1;
+  }
+  function open() { pop.setAttribute('data-open', '1'); }
+  function setActive(i) {
+    items.forEach(el => el.removeAttribute('data-active'));
+    if (items[i]) {
+      items[i].setAttribute('data-active', '1');
+      items[i].scrollIntoView({ block: 'nearest' });
+      activeIdx = i;
+    }
+  }
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function render(data) {
+    const out = [];
+    if (data.members && data.members.length) {
+      out.push('<div class="ac-section"><h5>Members</h5>');
+      for (const m of data.members) {
+        const dist = (m.district != null) ? `-${String(m.district).padStart(2,'0')}` : '';
+        out.push(
+          `<a class="ac-item" href="${escapeHtml(m.url)}">
+            <div class="ph" style="background-image:url('${escapeHtml(m.photo_url)}')"></div>
+            <div class="label">
+              <div class="name">${escapeHtml(m.name)}
+                <span class="badge ${escapeHtml(m.party_letter)}">${escapeHtml(m.party_letter)}</span>
+              </div>
+              <div class="meta">${escapeHtml(m.chamber)} · ${escapeHtml(m.state)}${escapeHtml(dist)}</div>
+            </div>
+          </a>`
+        );
+      }
+      out.push('</div>');
+    }
+    if (data.bills && data.bills.length) {
+      out.push('<div class="ac-section"><h5>Bills</h5>');
+      for (const b of data.bills) {
+        out.push(
+          `<a class="ac-item bill" href="${escapeHtml(b.url)}">
+            <div class="num"><strong>${escapeHtml(b.bill_type.toUpperCase())}</strong>${b.number}</div>
+            <div class="label">
+              <div class="name">${escapeHtml(b.title)}</div>
+              <div class="meta">${b.congress}th Congress · ${b.cosponsor_count} cosp.</div>
+            </div>
+          </a>`
+        );
+      }
+      out.push('</div>');
+    }
+    if (out.length === 0) {
+      out.push('<div class="ac-empty">No matches.</div>');
+    }
+    out.push('<div class="ac-footer"><kbd>↵</kbd> open · <kbd>esc</kbd> close</div>');
+    pop.innerHTML = out.join('');
+    items = Array.from(pop.querySelectorAll('.ac-item'));
+    activeIdx = -1;
+    open();
+  }
+
+  async function query(q) {
+    if (q === lastQ) return;
+    lastQ = q;
+    if (!q || q.length < 2) { close(); return; }
+    pop.innerHTML = '<div class="ac-loading">Searching…</div>';
+    open();
+    try {
+      const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=8', { credentials: 'omit' });
+      if (!r.ok) { close(); return; }
+      const data = await r.json();
+      if (q !== input.value.trim()) return;  // input changed since fetch started
+      render(data);
+    } catch (e) {
+      close();
+    }
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    timer = setTimeout(() => query(q), 140);
+  });
+  input.addEventListener('focus', () => {
+    if (input.value.trim().length >= 2 && pop.innerHTML) open();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (items.length) setActive(Math.min(items.length - 1, activeIdx + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (items.length) setActive(Math.max(0, activeIdx - 1));
+    } else if (e.key === 'Enter') {
+      if (activeIdx >= 0 && items[activeIdx]) {
+        e.preventDefault();
+        window.location.href = items[activeIdx].getAttribute('href');
+      }
+      // else: form submits to /browse?q=...
+    } else if (e.key === 'Escape') {
+      close();
+      input.blur();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (!pop.contains(e.target) && e.target !== input) close();
+  });
+})();
+</script>
 </body>
 </html>
