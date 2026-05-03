@@ -659,17 +659,67 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 for r in members_rows
             ]
 
-            # Bills — substring on title, prefer recent activity
+            # Bills — match by:
+            #   1. exact bill_type + number  (e.g. "hr 707", "sres 707", "s.res. 707")
+            #   2. pure number               (e.g. "707" → matches across all types)
+            #   3. title substring (LIKE)
+            import re as _re
+            bill_clauses: list[str] = []
+            bill_params: list = []
+
+            # Match "sres 707", "S.Res. 707", "hr707", "H R 707" — flexible
+            tn = _re.match(
+                r"^\s*(hr|s|hres|sres|hjres|sjres|hconres|sconres|"
+                r"h\.?\s*r\.?|h\.?\s*res\.?|s\.?\s*res\.?|"
+                r"h\.?\s*j\.?\s*res\.?|s\.?\s*j\.?\s*res\.?|"
+                r"h\.?\s*con\.?\s*res\.?|s\.?\s*con\.?\s*res\.?)"
+                r"\s*\.?\s*(\d{1,5})\s*$",
+                ql, _re.I,
+            )
+            parsed = None
+            if tn:
+                raw_type = _re.sub(r"[\.\s]", "", tn.group(1)).lower()
+                bt = {
+                    "hr": "hr", "s": "s",
+                    "hres": "hres", "sres": "sres",
+                    "hjres": "hjres", "sjres": "sjres",
+                    "hconres": "hconres", "sconres": "sconres",
+                }.get(raw_type)
+                if bt:
+                    parsed = (bt, int(tn.group(2)))
+                    bill_clauses.append("(bill_type = ? AND number = ?)")
+                    bill_params.extend([bt, parsed[1]])
+
+            stripped = ql.replace(".", "").replace(" ", "")
+            if stripped.isdigit():
+                bill_clauses.append("number = ?")
+                bill_params.append(int(stripped))
+
+            bill_clauses.append("LOWER(title) LIKE ?")
+            bill_params.append(f"%{ql}%")
+
+            where_sql = " OR ".join(bill_clauses)
             bills_rows = store.conn.execute(
-                """
+                f"""
                 SELECT bill_id, congress, bill_type, number, title,
-                       sponsor_bioguide, cosponsor_count, latest_action_date
+                       sponsor_bioguide, cosponsor_count, latest_action_date,
+                       CASE
+                         WHEN bill_type = ? AND number = ? THEN 0
+                         WHEN number = ? THEN 1
+                         ELSE 2
+                       END AS rank
                 FROM bills
-                WHERE LOWER(title) LIKE ?
-                ORDER BY COALESCE(latest_action_date, introduced_date) DESC NULLS LAST
+                WHERE {where_sql}
+                ORDER BY rank ASC, COALESCE(latest_action_date, introduced_date) DESC NULLS LAST
                 LIMIT ?
                 """,
-                [f"%{ql}%", limit],
+                [
+                    parsed[0] if parsed else "",
+                    int(parsed[1]) if parsed else -1,
+                    int(stripped) if stripped.isdigit() else -1,
+                    *bill_params,
+                    limit,
+                ],
             ).fetchall()
             bills = [
                 {
