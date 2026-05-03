@@ -22,19 +22,71 @@
     max-width: 100%;
   }
   @media (max-width: 800px) {
-    .photo { width: 160px; height: 160px; margin: 0 auto 12px; }
+    .photo { width: 140px; height: 140px; margin: 0 auto 12px; }
     .name-row { justify-content: center; text-align: center; }
-    .login { text-align: center; }
-    .bio { text-align: center; }
-    .meta-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-    .meta-list div { padding: 4px 0; }
-    .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
-    .tab { white-space: nowrap; flex-shrink: 0; }
-    .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .stat .val { font-size: 18px; }
-    .ev { grid-template-columns: 90px 1fr auto; gap: 8px; padding: 8px 4px; }
+    .name { font-size: 20px; }
+    .login { text-align: center; font-size: 14px; }
+    .bio { text-align: center; font-size: 13px; }
+
+    .meta-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 12px; font-size: 12px; }
+    .meta-list div { padding: 3px 0; }
+    .meta-list svg { width: 12px; height: 12px; }
+
+    /* Tabs scroll horizontally — bleed-through edges so they feel scrollable */
+    .tabs {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
+      margin: 0 -16px 16px;
+      padding: 0 16px;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { white-space: nowrap; flex-shrink: 0; padding: 6px 10px 10px; font-size: 13px; }
+    .tab .count { font-size: 10px; padding: 1px 6px; }
+
+    /* Stats strip — 2-col tight */
+    .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+    .stat { padding: 8px 12px; }
+    .stat .val { font-size: 16px; }
+    .stat .lbl { font-size: 10px; }
+    .stat .sub { font-size: 11px; }
+
+    /* Activity card — shrink padding, scale SVG, hide range selector spillover */
+    .activity-card { padding: 12px; }
+    .activity-card h2 { font-size: 13px; }
+    .activity-card h2 .total { display: block; margin-top: 4px; margin-left: 0; }
+    .grid-host { padding: 4px 0; overflow-x: auto; }
+    .grid-host svg { max-width: 100%; height: auto; min-width: 540px; }
+
+    /* Recent-activity rows — stack date above title */
+    .timeline h2 { font-size: 15px; }
+    .ev {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+      grid-row-gap: 4px;
+      padding: 10px 12px;
+    }
     .ev .when { font-size: 11px; }
-    .ev .what { font-size: 12px; white-space: normal; }
+    .ev .what { font-size: 13px; white-space: normal; line-height: 1.35; }
+    .ev > span:last-child { justify-self: start; }
+
+    /* Speech rows — single column with date as caption */
+    .speech-row {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+      grid-row-gap: 4px;
+      padding: 10px 12px;
+    }
+    .speech-row .when { font-size: 11px; }
+
+    /* Funding + committees blocks */
+    .funding-block, .committee-block { margin-top: 16px; }
+    .fund-row { padding: 8px 10px; }
+    .fund-row .receipts { font-size: 18px; }
+
+    /* Pills sit on their own row */
+    .pill { font-size: 10px; padding: 2px 8px; }
   }
 
   .name-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
