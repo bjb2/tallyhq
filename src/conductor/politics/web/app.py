@@ -530,8 +530,43 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         store = get_store()
         try:
             b = bills_mod.get(store, bill_id)
+
+            # Bill not in our index yet — many roll-call votes reference bills
+            # we haven't bulk-loaded. Render a stub instead of 404 so links
+            # from legislator profiles never dead-end.
             if b is None:
-                raise HTTPException(404, f"unknown bill: {bill_id}")
+                tallies = bill_views.rollcall_tallies(store, bill_id)
+                long_type = {
+                    "hr": "house-bill", "s": "senate-bill",
+                    "hjres": "house-joint-resolution",
+                    "sjres": "senate-joint-resolution",
+                    "hconres": "house-concurrent-resolution",
+                    "sconres": "senate-concurrent-resolution",
+                    "hres": "house-resolution",
+                    "sres": "senate-resolution",
+                }.get(bill_type, bill_type)
+                external_url = (
+                    f"https://www.congress.gov/bill/{congress}th-congress/"
+                    f"{long_type}/{number}"
+                )
+                tmpl = env.get_template("bill.html")
+                return tmpl.render(
+                    bill=None,
+                    bill_id=bill_id,
+                    bill_stub={
+                        "congress": congress,
+                        "bill_type": bill_type,
+                        "number": number,
+                        "url": external_url,
+                    },
+                    sponsor=None,
+                    cosponsors=[],
+                    tallies=tallies,
+                    actions=[],
+                    photo=lambda bg: photo_url(bg, "225x275"),
+                    big_photo=lambda bg: photo_url(bg, "450x550"),
+                )
+
             sponsor = bill_views.sponsor(store, b)
             cosponsors = bill_views.cosponsors(store, bill_id)
             tallies = bill_views.rollcall_tallies(store, bill_id)
@@ -541,6 +576,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         tmpl = env.get_template("bill.html")
         return tmpl.render(
             bill=b,
+            bill_stub=None,
             sponsor=sponsor,
             cosponsors=cosponsors,
             tallies=tallies,

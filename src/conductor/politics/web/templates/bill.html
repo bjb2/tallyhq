@@ -1,6 +1,91 @@
 {% extends "base.html" %}
-{% block title %}{{ bill.bill_id }} — {{ bill.title }}{% endblock %}
+{% block title %}{% if bill %}{{ bill.bill_id }} — {{ bill.title }}{% else %}{{ bill_stub.bill_type|upper }} {{ bill_stub.number }} — TallyHQ{% endif %}{% endblock %}
 {% block content %}
+
+{% if not bill %}
+<style>
+  .stub-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+  .stub-card .crumb {
+    color: var(--fg-muted);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .stub-card .crumb .num {
+    font-family: var(--mono);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .stub-card h1 {
+    font-size: 24px;
+    margin: 0 0 12px;
+    color: var(--fg);
+  }
+  .stub-card p { color: var(--fg-muted); font-size: 14px; max-width: 640px; margin: 0 0 16px; }
+  .stub-card .ext {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .stub-card .ext:hover { background: var(--accent-hover); text-decoration: none; }
+</style>
+<div class="stub-card">
+  <div class="crumb">
+    <span class="num">{{ bill_stub.bill_type|upper }} {{ bill_stub.number }}</span>
+    · {{ bill_stub.congress }}th Congress
+  </div>
+  <h1>Bill not yet in our index</h1>
+  <p>
+    TallyHQ tracks roll-call votes, sponsor data, and actions for every bill we've ingested,
+    but we haven't bulk-loaded this one yet. The roll-call votes referencing it appear below.
+  </p>
+  <a class="ext" href="{{ bill_stub.url }}" target="_blank" rel="noopener">View on congress.gov →</a>
+</div>
+
+{% if tallies %}
+<section class="block">
+  <h2 style="font-family: var(--serif); font-size: 20px; margin: 0 0 8px;">Roll-call votes</h2>
+  <p style="color: var(--fg-muted); font-size: 13px; margin: 0 0 16px;">Floor votes that reference this bill.</p>
+  <style>
+    .tally { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+    .tally .t { text-align: center; padding: 8px; border-radius: 4px; }
+    .tally .t.yea { background: #e6f4ea; }
+    .tally .t.nay { background: #fceaea; }
+    .tally .t.miss { background: var(--bg-elev-2); }
+    .tally .t .v { font-size: 22px; font-weight: 600; font-family: var(--serif); }
+    .tally .t.yea .v { color: #1a7f37; }
+    .tally .t.nay .v { color: #b62428; }
+    .tally .t.miss .v { color: var(--fg-muted); }
+    .tally .t .l { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; }
+    .roll-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin-bottom: 12px; }
+    .roll-card h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 17px; }
+    .roll-card .when { color: var(--fg-muted); font-size: 12px; margin-bottom: 12px; }
+  </style>
+  {% for t in tallies %}
+    <div class="roll-card">
+      <h3>Roll call #{{ t.rollcall_num }} — {{ t.question }}</h3>
+      <div class="when">{{ t.when.strftime('%B %d, %Y') }}{% if t.result %} · <strong>{{ t.result }}</strong>{% endif %}</div>
+      <div class="tally">
+        <div class="t yea"><div class="v">{{ t.yea }}</div><div class="l">Yea</div></div>
+        <div class="t nay"><div class="v">{{ t.nay }}</div><div class="l">Nay</div></div>
+        <div class="t miss"><div class="v">{{ t.missed }}</div><div class="l">Missed</div></div>
+      </div>
+    </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% else %}
 <style>
   .bill-head {
     border-bottom: 1px solid var(--border);
@@ -443,4 +528,5 @@
     </a>
   </aside>
 </div>
+{% endif %}
 {% endblock %}
