@@ -521,8 +521,8 @@
 
     {% if lobby_clients %}
     <section class="block">
-      <h2>Lobbied by</h2>
-      <p class="sub">Top organizations whose lobbying filings reference this bill, ranked by filing count.</p>
+      <h2>Lobbying activity</h2>
+      <p class="sub">Organizations whose LDA filings reference this bill, ranked by filing count. <strong>Position not disclosed</strong> — LDA does not require lobbyists to report support / oppose / monitor. Bill-number references can be stale (lobbyists sometimes copy text year-over-year), so verify against the filing description.</p>
       <style>
         .lobby-list {
           background: var(--bg-elev);
@@ -595,7 +595,7 @@
         {% endfor %}
       </div>
       <p style="font-size: 11px; color: var(--fg-faint); margin-top: 6px;">
-        via Senate LDA · self-reported quarterly. Filing-count is filings mentioning this bill, not money spent on it.
+        via Senate LDA · self-reported quarterly. Filing count = filings mentioning this bill (no position required), not money spent on it. Click a client to see all bills they've filed on.
       </p>
     </section>
     {% endif %}
