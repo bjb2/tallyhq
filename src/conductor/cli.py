@@ -239,7 +239,8 @@ def cmd_politics_merge_backfill(args, store: Store) -> int:
             " AND (bfe.source != 'lda_senate' OR bfe.event_type = 'bill_lobbied')"
         )
 
-    new_events = store.conn.execute(
+    before_evs = store.conn.execute("SELECT COUNT(*) FROM main.events").fetchone()[0]
+    store.conn.execute(
         f"""
         INSERT INTO main.events
             (source, source_id, entity_id, event_type, observed_at, occurred_at,
@@ -253,13 +254,14 @@ def cmd_politics_merge_backfill(args, store: Store) -> int:
               AND m.source_id = bfe.source_id
               AND m.payload_hash = bfe.payload_hash
         ){extra_filter}
-        RETURNING 1
         """
-    ).fetchall()
+    )
+    after_evs = store.conn.execute("SELECT COUNT(*) FROM main.events").fetchone()[0]
+    new_events = [(1,)] * (after_evs - before_evs)
 
     bf_has_bills = store.conn.execute(
-        "SELECT COUNT(*) FROM bf.information_schema.tables "
-        "WHERE table_name = 'bills'"
+        "SELECT COUNT(*) FROM duckdb_tables() "
+        "WHERE database_name = 'bf' AND table_name = 'bills'"
     ).fetchone()[0]
     new_bills = []
     if bf_has_bills:
@@ -274,8 +276,8 @@ def cmd_politics_merge_backfill(args, store: Store) -> int:
 
     # lda_filings — only present if the sidecar ran the LDA backfill
     bf_has_lda = store.conn.execute(
-        "SELECT COUNT(*) FROM bf.information_schema.tables "
-        "WHERE table_name = 'lda_filings'"
+        "SELECT COUNT(*) FROM duckdb_tables() "
+        "WHERE database_name = 'bf' AND table_name = 'lda_filings'"
     ).fetchone()[0]
     new_lda = []
     if bf_has_lda:
