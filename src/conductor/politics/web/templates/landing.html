@@ -273,6 +273,9 @@
     background: var(--bg-elev-2) center/cover no-repeat;
     border: 1px solid var(--border-muted);
   }
+  /* Without min-width:0 on grid children, long names push the val column
+     past the container's right edge. */
+  .rank-row > * { min-width: 0; }
   .rank-row .name {
     color: var(--fg);
     font-weight: 500;
