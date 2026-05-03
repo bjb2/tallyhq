@@ -491,9 +491,11 @@ def build_parser() -> argparse.ArgumentParser:
     pp_grid.add_argument("--days", type=int, default=180)
     pp_grid.set_defaults(func=cmd_politics_grid)
 
+    import os as _os
+    _default_port = int(_os.environ.get("PORT", 8770))
     pp_web = psub.add_parser("web", help="run FastAPI web app")
-    pp_web.add_argument("--host", default="127.0.0.1")
-    pp_web.add_argument("--port", type=int, default=8770)
+    pp_web.add_argument("--host", default=_os.environ.get("HOST", "127.0.0.1"))
+    pp_web.add_argument("--port", type=int, default=_default_port)
     pp_web.set_defaults(func=cmd_politics_web)
 
     pp_bf = psub.add_parser(

@@ -27,4 +27,5 @@ RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Bind to 0.0.0.0 so Railway's proxy can reach us.
-CMD ["sh", "-c", "python -m conductor.cli --db ${CONDUCTOR_DB} politics web --host 0.0.0.0 --port ${PORT}"]
+# CLI honors $PORT + $HOST from env (set by Railway on the web service).
+CMD ["python", "-m", "conductor.cli", "--db", "/data/conductor.duckdb", "politics", "web", "--host", "0.0.0.0"]
