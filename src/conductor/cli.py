@@ -229,8 +229,18 @@ def cmd_politics_merge_backfill(args, store: Store) -> int:
     abs_path = str(backfill_path.resolve()).replace("\\", "/")
     store.conn.execute(f"ATTACH DATABASE '{abs_path}' AS bf (READ_ONLY)")
 
+    # Selective filter — when sidecar is the LDA backfill, the bulky
+    # `lda_filing` events duplicate what's already summarized in the
+    # `lda_filings` table. --lda-events-only skips them, keeping just
+    # `bill_lobbied` events that drive the bill-page lobbying strip.
+    extra_filter = ""
+    if args.lda_events_only:
+        extra_filter = (
+            " AND (bfe.source != 'lda_senate' OR bfe.event_type = 'bill_lobbied')"
+        )
+
     new_events = store.conn.execute(
-        """
+        f"""
         INSERT INTO main.events
             (source, source_id, entity_id, event_type, observed_at, occurred_at,
              payload_hash, payload, schema_version)
@@ -242,7 +252,7 @@ def cmd_politics_merge_backfill(args, store: Store) -> int:
             WHERE m.source = bfe.source
               AND m.source_id = bfe.source_id
               AND m.payload_hash = bfe.payload_hash
-        )
+        ){extra_filter}
         RETURNING 1
         """
     ).fetchall()
@@ -525,6 +535,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="merge a sidecar backfill DB into the main DB",
     )
     pp_mg.add_argument("--batch-db", default="data/backfill.duckdb")
+    pp_mg.add_argument(
+        "--lda-events-only",
+        action="store_true",
+        help="for LDA sidecars: skip bulky `lda_filing` events; copy only `bill_lobbied` "
+             "events + the lda_filings entity table (saves ~150-200MB on main).",
+    )
     pp_mg.set_defaults(func=cmd_politics_merge_backfill)
 
     pp_bulk = psub.add_parser(
