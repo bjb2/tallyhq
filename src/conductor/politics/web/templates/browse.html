@@ -204,7 +204,7 @@
 <div class="grid">
   {% for r in roster %}
     {% set p = (r.party[0] if r.party else 'I') %}
-    <a class="leg-card" href="/legislator/{{ r.bioguide_id }}">
+    <a class="leg-card" target="_self" href="/legislator/{{ r.bioguide_id }}">
       <div class="ph" style="background-image: url('{{ photo(r.bioguide_id) }}');"></div>
       <div class="info">
         <div class="name">{{ r.full_name }}</div>
