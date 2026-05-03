@@ -21,5 +21,10 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-# Bind to 0.0.0.0 so Railway's proxy can reach us. Use $PORT.
+# Entrypoint handles optional one-time DB seed from $SEED_DB_URL.
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Bind to 0.0.0.0 so Railway's proxy can reach us.
 CMD ["sh", "-c", "python -m conductor.cli --db ${CONDUCTOR_DB} politics web --host 0.0.0.0 --port ${PORT}"]
