@@ -1,0 +1,526 @@
+{% extends "base.html" %}
+{% block title %}{{ entity.full_name }} — Conductor{% endblock %}
+{% block content %}
+<style>
+  .profile {
+    display: grid;
+    grid-template-columns: 296px 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 800px) { .profile { grid-template-columns: 1fr; gap: 12px; } }
+
+  .sidebar { position: sticky; top: 80px; align-self: start; }
+  @media (max-width: 800px) { .sidebar { position: static; } }
+  .photo {
+    width: 296px;
+    height: 296px;
+    border-radius: 50%;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    border: 1px solid var(--border);
+    display: block;
+    margin-bottom: 16px;
+    max-width: 100%;
+  }
+  @media (max-width: 800px) {
+    .photo { width: 160px; height: 160px; margin: 0 auto 12px; }
+    .name-row { justify-content: center; text-align: center; }
+    .login { text-align: center; }
+    .bio { text-align: center; }
+    .meta-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+    .meta-list div { padding: 4px 0; }
+    .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+    .tab { white-space: nowrap; flex-shrink: 0; }
+    .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat .val { font-size: 18px; }
+    .ev { grid-template-columns: 90px 1fr auto; gap: 8px; padding: 8px 4px; }
+    .ev .when { font-size: 11px; }
+    .ev .what { font-size: 12px; white-space: normal; }
+  }
+
+  .name-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .name { font-size: 24px; font-weight: 600; line-height: 1.2; }
+  .login { color: var(--fg-muted); font-size: 18px; font-weight: 300; }
+  .bio { color: var(--fg); margin: 12px 0 16px; font-size: 14px; line-height: 1.5; }
+  .meta-list { color: var(--fg-muted); font-size: 14px; margin-top: 16px; }
+  .meta-list div { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+  .meta-list svg { flex-shrink: 0; color: var(--fg-faint); }
+  .meta-list a { color: var(--fg-muted); }
+  .meta-list a:hover { color: var(--accent); }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .tab {
+    padding: 8px 16px 12px;
+    color: var(--fg-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tab:hover { color: var(--fg); text-decoration: none; }
+  .tab.active { color: var(--fg); border-bottom-color: #fd8c73; font-weight: 600; }
+  .tab .count {
+    background: var(--bg-elev-2);
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--fg-muted);
+    font-weight: 500;
+  }
+
+  /* Stats strip */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .stat .lbl { color: var(--fg-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .stat .val { font-size: 22px; font-weight: 600; }
+  .stat .sub { color: var(--fg-muted); font-size: 12px; margin-top: 2px; }
+
+  /* Activity card */
+  .activity-card { padding: 16px; }
+  .activity-card h2 {
+    font-size: 14px;
+    margin: 0 0 12px;
+    font-weight: 400;
+    color: var(--fg);
+  }
+  .activity-card h2 .total {
+    color: var(--fg-muted);
+    margin-left: 8px;
+  }
+  .grid-host {
+    overflow-x: auto;
+    padding: 8px 4px;
+  }
+  .legend {
+    margin-top: 12px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .legend .scale { display: inline-flex; gap: 3px; }
+  .legend .scale span {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  /* Timeline */
+  .timeline { margin-top: 24px; }
+  .timeline h2 { font-size: 16px; margin: 0 0 12px; }
+  .ev {
+    display: grid;
+    grid-template-columns: 100px 1fr auto;
+    gap: 12px;
+    padding: 10px 12px;
+    border-left: 2px solid var(--border);
+    margin-left: 6px;
+    align-items: center;
+  }
+  .ev:hover { background: var(--bg-elev); }
+  .ev .when { color: var(--fg-muted); font-size: 12px; }
+  .ev .what { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev .what .legis { color: var(--fg-muted); font-size: 12px; }
+  .ev .pill {
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pill.yea { background: #e6f4ea; color: #1a7f37; border: 1px solid #c7e4c8; }
+  .pill.nay { background: #fceaea; color: #b62428; border: 1px solid #f3c8c8; }
+  .pill.missed { background: var(--bg-elev-2); color: var(--fg-muted); border: 1px solid var(--border); }
+  .pill.break { background: #fff4d6; color: #8a5a00; border: 1px solid #f0d97e; margin-left: 4px; }
+
+  /* Day-range selector */
+  .range {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .range a { padding: 4px 10px; color: var(--fg-muted); border-right: 1px solid var(--border); }
+  .range a:last-child { border-right: none; }
+  .range a.active { background: var(--bg-elev-2); color: var(--fg); }
+  .range a:hover { background: var(--bg-elev); text-decoration: none; color: var(--fg); }
+</style>
+
+{% set p = (entity.party[0] if entity.party else 'I') %}
+
+<div class="profile">
+  <aside class="sidebar">
+    <div class="photo" style="background-image: url('{{ photo }}');"></div>
+    <div class="name-row">
+      <span class="name">{{ entity.full_name }}</span>
+    </div>
+    <div class="login">{{ entity.bioguide_id }}</div>
+
+    <div class="bio">
+      {{ entity.party }} ·
+      {{ entity.chamber|title }}{% if entity.district is not none and entity.district != 0 %} {{ entity.state }}-{{ '%02d'|format(entity.district) }}{% else %} {{ entity.state }}{% endif %}
+      <span class="badge {{ p }}" style="margin-left: 4px;">{{ p }}</span>
+    </div>
+
+    <div class="meta-list">
+      <div>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 8a4.5 4.5 0 1 1 9 0a4.5 4.5 0 0 1-9 0Z"/></svg>
+        Sworn in {{ entity.served_from.strftime('%b %Y') }}
+      </div>
+      {% if entity.ids.govtrack %}
+      <div>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Z"/></svg>
+        <a href="https://www.govtrack.us/congress/members/{{ entity.ids.govtrack }}" target="_blank" rel="noopener">GovTrack</a>
+      </div>
+      {% endif %}
+      {% if entity.ids.fec %}
+        {% set fec_id = (entity.ids.fec[-1] if (entity.ids.fec is iterable and entity.ids.fec is not string) else entity.ids.fec) %}
+      <div>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l3.5 6h-2v8h-3v-8h-2L8 1Z"/></svg>
+        <a href="https://www.fec.gov/data/candidate/{{ fec_id }}/" target="_blank" rel="noopener">FEC: {{ fec_id }}</a>
+      </div>
+      {% endif %}
+      {% if entity.ids.opensecrets %}
+      <div>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>
+        <a href="https://www.opensecrets.org/members-of-congress/summary?cid={{ entity.ids.opensecrets }}" target="_blank" rel="noopener">OpenSecrets</a>
+      </div>
+      {% endif %}
+      {% if entity.ids.wikipedia %}
+      <div>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v3h-2V4H9v8h1v2H6v-2h1V4H4v1H2V2Z"/></svg>
+        <a href="https://en.wikipedia.org/wiki/{{ entity.ids.wikipedia|replace(' ','_') }}" target="_blank" rel="noopener">Wikipedia</a>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if committees %}
+    <style>
+      .committee-block { margin-top: 24px; }
+      .committee-block h4 {
+        font-family: var(--sans);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fg-muted);
+        margin: 0 0 8px;
+        font-weight: 600;
+      }
+      .committee-block ul { list-style: none; padding: 0; margin: 0; }
+      .committee-block li {
+        padding: 6px 0;
+        border-top: 1px solid var(--border-muted);
+        font-size: 13px;
+      }
+      .committee-block li:first-child { border-top: none; }
+      .committee-block .nm { color: var(--fg); display: block; }
+      .committee-block .role {
+        display: inline-block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 1px 6px;
+        margin-left: 4px;
+        border-radius: 3px;
+        background: var(--bg-elev-2);
+        color: var(--fg-muted);
+        vertical-align: 1px;
+      }
+      .committee-block .role.chair { background: #fff4d6; color: #8a5a00; font-weight: 600; }
+      .committee-block .role.ranking { background: #ece0f7; color: #5e3b8c; font-weight: 600; }
+      .committee-block .sub-of { color: var(--fg-muted); font-size: 12px; }
+    </style>
+    {% set primary_committees = committees | rejectattr('type', 'eq', 'subcommittee') | list %}
+    {% set sub_committees = committees | selectattr('type', 'eq', 'subcommittee') | list %}
+    <style>
+      .funding-block { margin-top: 24px; }
+      .funding-block h4 {
+        font-family: var(--sans);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fg-muted);
+        margin: 0 0 8px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .funding-block .wip {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        background: #fff4d6;
+        color: #8a5a00;
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-weight: 600;
+      }
+      .fund-row {
+        background: var(--bg-elev-2);
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+      }
+      .fund-row .cycle { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .fund-row .receipts { font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--fg); margin: 2px 0; }
+      .fund-row .meta { color: var(--fg-muted); font-size: 11px; }
+      .fund-row .meta .pos { color: var(--fg); font-weight: 500; }
+      .fund-empty {
+        background: var(--bg-elev-2);
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 12px;
+        color: var(--fg-muted);
+        font-style: italic;
+        line-height: 1.4;
+      }
+    </style>
+    <div class="funding-block">
+      <h4>
+        Campaign finance
+        <span class="wip">🚧 building</span>
+      </h4>
+      {% if funding %}
+        {% for f in funding %}
+          <div class="fund-row">
+            <div class="cycle">{{ f.cycle - 1 }}–{{ f.cycle }} cycle{% if f.last_report_label %} · {{ f.last_report_label|title }}{% endif %}</div>
+            <div class="receipts">${{ '{:,.0f}'.format(f.receipts) }}</div>
+            <div class="meta">
+              raised
+              {% if f.disbursements %} · <span class="pos">${{ '{:,.0f}'.format(f.disbursements) }}</span> spent{% endif %}
+              {% if f.cash_on_hand %} · <span class="pos">${{ '{:,.0f}'.format(f.cash_on_hand) }}</span> on hand{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+        <div style="font-size: 11px; color: var(--fg-faint); margin-top: 4px;">via OpenFEC · self-reported</div>
+      {% else %}
+        <div class="fund-empty">
+          Campaign-finance data is syncing from OpenFEC across all 535 members. Check back soon.
+        </div>
+      {% endif %}
+    </div>
+
+    {% if primary_committees %}
+    <div class="committee-block">
+      <h4>Committees</h4>
+      <ul>
+        {% for c in primary_committees %}
+          <li>
+            <span class="nm">{{ c.name }}</span>
+            {% if c.title and c.title|lower in ['chair', 'chairman', 'chairwoman'] %}
+              <span class="role chair">{{ c.title }}</span>
+            {% elif c.title and 'ranking' in c.title|lower %}
+              <span class="role ranking">{{ c.title }}</span>
+            {% elif c.title %}
+              <span class="role">{{ c.title }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if sub_committees %}
+    <div class="committee-block">
+      <h4>Subcommittees</h4>
+      <ul>
+        {% for c in sub_committees %}
+          <li>
+            <span class="nm">{{ c.name }}</span>
+            {% if c.title and c.title|lower in ['chair', 'chairman', 'chairwoman'] %}
+              <span class="role chair">{{ c.title }}</span>
+            {% elif c.title and 'ranking' in c.title|lower %}
+              <span class="role ranking">{{ c.title }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endif %}
+  </aside>
+
+  <div class="content">
+    <nav class="tabs">
+      <a href="?tab=overview&days={{ days }}" class="tab {% if tab == 'overview' %}active{% endif %}">Overview</a>
+      <a href="?tab=votes&days={{ days }}"    class="tab {% if tab == 'votes' %}active{% endif %}">Votes <span class="count">{{ stats.total_votes }}</span></a>
+      <a href="?tab=bills&days={{ days }}"    class="tab {% if tab == 'bills' %}active{% endif %}">Bills <span class="count">{{ stats.bills_sponsored + stats.cosponsorships }}</span></a>
+      <a href="?tab=speeches&days={{ days }}" class="tab {% if tab == 'speeches' %}active{% endif %}">Speeches <span class="count">{{ stats.floor_speeches }}</span></a>
+    </nav>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="lbl">Votes cast</div>
+        <div class="val">{{ stats.total_votes }}</div>
+        <div class="sub">{{ stats.yea_count }} Yea · {{ stats.nay_count }} Nay</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Missed</div>
+        <div class="val">{{ stats.missed_count }}</div>
+        <div class="sub">{% if stats.total_votes + stats.missed_count > 0 %}{{ '%.1f%%'|format(100 * stats.missed_count / (stats.total_votes + stats.missed_count)) }}{% else %}—{% endif %} of roll-calls</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Breaks from party</div>
+        <div class="val">{{ stats.break_count }}</div>
+        <div class="sub">{{ '%.1f%%'|format(100 * stats.break_rate) }} break rate</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Floor speeches</div>
+        <div class="val">{{ stats.floor_speeches }}</div>
+        <div class="sub">{{ stats.cosponsorships }} cosponsorships</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Last active</div>
+        <div class="val mono" style="font-size: 16px; padding-top: 4px;">{{ stats.last_active.strftime('%b %d') if stats.last_active else '—' }}</div>
+        <div class="sub">{{ stats.last_active.strftime('%Y') if stats.last_active else '' }}</div>
+      </div>
+    </div>
+
+    {% if tab == 'overview' %}
+    <div class="card activity-card">
+      <h2>
+        Activity over the last year
+        <span class="total">{{ '%.1f'|format(grid.total) }} intensity points</span>
+      </h2>
+      <div class="grid-host">{{ svg|safe }}</div>
+      <div class="legend">
+        Less
+        <span class="scale">
+          <span style="background:#ece8de"></span>
+          <span style="background:#c7e4c8"></span>
+          <span style="background:#85c69a"></span>
+          <span style="background:#3e9d6f"></span>
+          <span style="background:#1a7f37"></span>
+        </span>
+        More
+      </div>
+    </div>
+    {% endif %}
+
+    <style>
+      .speech-row {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        gap: 12px;
+        padding: 12px;
+        border-left: 2px solid var(--border);
+        margin-left: 6px;
+      }
+      .speech-row:hover { background: var(--bg-elev); }
+      .speech-row .when { color: var(--fg-muted); font-size: 12px; font-family: var(--mono); }
+      .speech-row .title { font-family: var(--serif); font-size: 14px; line-height: 1.4; color: var(--fg); }
+      .speech-row .meta { color: var(--fg-muted); font-size: 11px; margin-top: 4px; }
+      .speech-row .meta .pill {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: var(--bg-elev-2);
+        margin-right: 6px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .empty-feed { color: var(--fg-muted); padding: 24px; text-align: center; font-style: italic; }
+    </style>
+
+    <div class="timeline">
+      <h2>
+        {% if tab == 'overview' %}Recent activity
+        {% elif tab == 'votes' %}Roll-call votes
+        {% elif tab == 'bills' %}Bill sponsorships
+        {% elif tab == 'speeches' %}Floor speeches
+        {% endif %}
+      </h2>
+      <div class="card" style="padding: 4px 8px;">
+        {% if not recent %}
+          <div class="empty-feed">No {{ tab if tab != 'overview' else 'activity' }} yet.</div>
+        {% endif %}
+
+        {% for occurred_at, event_type, payload in recent %}
+          {% set pl = payload | from_json %}
+
+          {% if event_type == 'floor.speech' %}
+            <div class="speech-row">
+              <span class="when">{{ occurred_at.strftime('%b %d, %Y') }}</span>
+              <div>
+                <div class="title">
+                  {% if pl.get('granule_url') %}
+                    <a href="{{ pl.granule_url }}" target="_blank" rel="noopener" style="color: var(--fg);">{{ pl.get('title') or 'Untitled' }}</a>
+                  {% else %}
+                    {{ pl.get('title') or 'Untitled' }}
+                  {% endif %}
+                </div>
+                <div class="meta">
+                  <span class="pill">{{ (pl.get('chamber') or pl.get('granule_class') or 'floor')|lower }}</span>
+                  {% if pl.get('citation') %}{{ pl.citation }}{% endif %}
+                  {% if pl.get('role') and pl.role != 'SPEAKING' %} · {{ pl.role|lower }}{% endif %}
+                </div>
+              </div>
+            </div>
+          {% else %}
+            <div class="ev">
+              <span class="when mono">{{ occurred_at.strftime('%b %d, %Y') }}</span>
+              <span class="what">
+                {% if event_type.startswith('vote') %}
+                  {% set bp = bill_path(pl.get('congress'), pl.get('legis_num')) %}
+                  {% if bp %}
+                    <strong><a href="{{ bp }}">{{ pl.get('legis_num') }}</a></strong>
+                  {% else %}
+                    <strong>{{ pl.get('legis_num') or 'Roll-call' }}</strong>
+                  {% endif %}
+                  <span class="legis">— {{ pl.get('question') or '' }}</span>
+                {% elif event_type.startswith('bill.') %}
+                  {% set bid = pl.get('bill_id') %}
+                  {% if bid %}
+                    {% set parts = bid.split(':') %}
+                    <strong><a href="/bill/{{ parts[0] }}/{{ parts[1] }}/{{ parts[2] }}">{{ parts[1]|upper }} {{ parts[2] }}</a></strong>
+                    <span class="legis">— {{ pl.get('title') or '' }}</span>
+                  {% else %}
+                    {{ pl.get('title') or event_type }}
+                  {% endif %}
+                {% else %}
+                  {{ pl.get('title') or pl.get('question') or event_type }}
+                {% endif %}
+              </span>
+              <span>
+                {% set pos = pl.get('position') %}
+                {% if pos == 'Yea' %}<span class="pill yea">Yea</span>
+                {% elif pos == 'Nay' %}<span class="pill nay">Nay</span>
+                {% elif event_type == 'vote.missed' %}<span class="pill missed">Missed</span>
+                {% endif %}
+                {% if pl.get('party_line') == false %}<span class="pill break">break</span>{% endif %}
+              </span>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <p class="muted" style="margin-top: 32px; font-size: 12px;">
+      <a href="/legislator/{{ entity.bioguide_id }}.svg?days=365">embed SVG</a> ·
+      <a href="/api/legislator/{{ entity.bioguide_id }}">JSON</a> ·
+      data from clerk.house.gov + @unitedstates/congress-legislators
+    </p>
+  </div>
+</div>
+{% endblock %}

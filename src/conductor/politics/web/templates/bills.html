@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Bills — TallyHQ{% endblock %}
+{% block content %}
+<style>
+  .bills-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .bills-head h1 { font-size: 22px; margin: 0; }
+
+  .bills-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .bills-filters .field { height: 28px; font-size: 13px; }
+  .bills-filters .grow { flex: 1; min-width: 220px; }
+  .bills-filters select.field { max-width: 240px; }
+
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .seg a {
+    padding: 5px 12px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    border-right: 1px solid var(--border);
+  }
+  .seg a:last-child { border-right: none; }
+  .seg a:hover { background: var(--bg-elev); text-decoration: none; color: var(--fg); }
+  .seg a.active { background: var(--bg-elev-2); color: var(--fg); }
+
+  .bills-agg {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 720px) { .bills-agg { grid-template-columns: repeat(3, 1fr); } }
+  .bills-agg .c .lbl { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .bills-agg .c .v { font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--fg); }
+
+  .bill-row {
+    display: grid;
+    grid-template-columns: 60px 44px 1fr 200px;
+    gap: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-muted);
+    align-items: center;
+  }
+  @media (max-width: 720px) {
+    .bill-row { grid-template-columns: 44px 36px 1fr; gap: 10px; }
+    .bill-row .actions { display: none; }
+  }
+  .bill-row:hover { background: var(--bg-elev); }
+  .bill-row .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-muted);
+    text-align: center;
+  }
+  .bill-row .num strong {
+    display: block;
+    font-size: 11px;
+    color: var(--fg);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .bill-row .ph {
+    width: 36px; height: 44px;
+    border-radius: 4px;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    border: 1px solid var(--border-muted);
+  }
+  .bill-row .ph.empty {
+    background: var(--bg-elev-2);
+  }
+  @media (max-width: 720px) {
+    .bill-row .ph { width: 28px; height: 36px; }
+  }
+  .bill-row .title {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--fg);
+    margin-bottom: 4px;
+  }
+  .bill-row .title:hover { color: var(--accent); }
+  .bill-row .meta {
+    color: var(--fg-muted);
+    font-size: 12px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .bill-row .meta .pol {
+    background: var(--bg-elev-2);
+    padding: 1px 8px;
+    border-radius: 999px;
+    color: var(--fg-muted);
+  }
+  .bill-row .actions {
+    text-align: right;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+  .bill-row .actions .cosp {
+    font-family: var(--serif);
+    font-size: 18px;
+    color: var(--fg);
+    font-weight: 600;
+    display: block;
+  }
+  .bill-row .actions .latest {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-top: 4px;
+    line-height: 1.3;
+    max-height: 2.6em;
+    overflow: hidden;
+  }
+  .bill-row .sponsor {
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .bill-row .sponsor a { color: var(--fg); }
+
+  .bills-list {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .bills-list .empty { padding: 32px; text-align: center; color: var(--fg-muted); font-style: italic; }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 16px;
+    align-items: center;
+    color: var(--fg-muted);
+    font-size: 13px;
+  }
+  .pagination a, .pagination span {
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: var(--fg-muted);
+  }
+  .pagination a {
+    border: 1px solid var(--border);
+  }
+  .pagination a:hover { background: var(--bg-elev); border-color: var(--accent); text-decoration: none; }
+  .pagination .current {
+    background: var(--bg-elev-2);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  .pagination .ellipsis { border: none; }
+</style>
+
+<div class="bills-head">
+  <h1>Bills</h1>
+  <span class="muted">{{ "{:,}".format(total) }} {% if total == 1 %}bill{% else %}bills{% endif %} matched</span>
+</div>
+
+<form method="get" action="/bills" class="bills-filters">
+  <input class="field grow" type="search" name="q" value="{{ q or '' }}" placeholder="Search bill titles…" />
+  <span class="seg">
+    <a href="/bills" class="{% if not chamber and not kind %}active{% endif %}">All</a>
+    <a href="/bills?chamber=house" class="{% if chamber == 'house' %}active{% endif %}">House</a>
+    <a href="/bills?chamber=senate" class="{% if chamber == 'senate' %}active{% endif %}">Senate</a>
+  </span>
+  <span class="seg" title="Type of legislation">
+    <a href="/bills?kind=bills"      class="{% if kind == 'bills' %}active{% endif %}">Bills</a>
+    <a href="/bills?kind=joint"      class="{% if kind == 'joint' %}active{% endif %}">Joint res.</a>
+    <a href="/bills?kind=concurrent" class="{% if kind == 'concurrent' %}active{% endif %}">Conc. res.</a>
+    <a href="/bills?kind=simple"     class="{% if kind == 'simple' %}active{% endif %}">Simple res.</a>
+  </span>
+  {% if chamber %}<input type="hidden" name="chamber" value="{{ chamber }}" />{% endif %}
+  {% if kind %}<input type="hidden" name="kind" value="{{ kind }}" />{% endif %}
+  <select class="field" name="policy_area">
+    <option value="">Any policy area</option>
+    {% for pa in policy_areas %}
+      <option value="{{ pa }}" {% if pa == policy_area %}selected{% endif %}>{{ pa }}</option>
+    {% endfor %}
+  </select>
+  <select class="field" name="sort">
+    <option value="recent" {% if sort == 'recent' %}selected{% endif %}>Latest action</option>
+    <option value="introduced" {% if sort == 'introduced' %}selected{% endif %}>Introduced date</option>
+    <option value="cosponsors" {% if sort == 'cosponsors' %}selected{% endif %}>Most cosponsored</option>
+    <option value="title" {% if sort == 'title' %}selected{% endif %}>Title A–Z</option>
+  </select>
+  <button class="btn" type="submit">Apply</button>
+  {% if q or chamber or policy_area or sort != 'recent' %}<a class="muted" href="/bills" style="font-size: 12px;">clear</a>{% endif %}
+</form>
+
+{% if agg.total %}
+<div class="bills-agg">
+  <div class="c"><div class="lbl">Bills shown</div><div class="v">{{ "{:,}".format(agg.total) }}</div></div>
+  <div class="c"><div class="lbl">Distinct sponsors</div><div class="v">{{ "{:,}".format(agg.sponsors) }}</div></div>
+  <div class="c"><div class="lbl">Total cosponsorships</div><div class="v">{{ "{:,}".format(agg.cosp) }}</div></div>
+</div>
+{% endif %}
+
+<div class="bills-list">
+  {% if not results %}
+    <div class="empty">No bills matched.</div>
+  {% endif %}
+  {% for b in results %}
+    <div class="bill-row">
+      <div class="num">
+        <strong>{{ b.bill_type|upper }}</strong>
+        {{ b.number }}
+      </div>
+      {% if b.sponsor %}
+        <a href="/legislator/{{ b.sponsor.bioguide_id }}" title="{{ b.sponsor.full_name }}">
+          <div class="ph" style="background-image: url('{{ photo(b.sponsor.bioguide_id) }}');"></div>
+        </a>
+      {% else %}
+        <div class="ph empty"></div>
+      {% endif %}
+      <div>
+        <a href="/bill/{{ b.congress }}/{{ b.bill_type }}/{{ b.number }}" class="title">
+          {{ b.title }}
+        </a>
+        <div class="meta">
+          {% if b.policy_area %}<span class="pol">{{ b.policy_area }}</span>{% endif %}
+          <span>{{ b.congress }}th Congress</span>
+          {% if b.introduced_date %}<span>introduced {{ b.introduced_date.strftime('%b %d, %Y') }}</span>{% endif %}
+          {% if b.sponsor %}
+            {% set p = b.sponsor.party[0] if b.sponsor.party else 'I' %}
+            <span class="sponsor">by <a href="/legislator/{{ b.sponsor.bioguide_id }}">{{ b.sponsor.full_name }}</a> <span class="badge {{ p }}">{{ p }}</span></span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="actions">
+        <span class="cosp">{{ b.cosponsor_count }}</span>
+        <div>cosponsors</div>
+        {% if b.latest_action_text %}
+          <div class="latest" title="{{ b.latest_action_text }}">{{ b.latest_action_text[:120] }}{% if b.latest_action_text|length > 120 %}…{% endif %}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+{% set qs %}{% if q %}q={{ q }}&{% endif %}{% if chamber %}chamber={{ chamber }}&{% endif %}{% if policy_area %}policy_area={{ policy_area }}&{% endif %}sort={{ sort }}&{% endset %}
+<div class="pagination">
+  {% if page > 1 %}<a href="?{{ qs }}page={{ page - 1 }}">←</a>{% endif %}
+  {% set show_pages = [] %}
+  {% for p in range(1, total_pages + 1) %}
+    {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+      {% if p == page %}
+        <span class="current">{{ p }}</span>
+      {% else %}
+        <a href="?{{ qs }}page={{ p }}">{{ p }}</a>
+      {% endif %}
+    {% elif p == page - 3 or p == page + 3 %}
+      <span class="ellipsis">…</span>
+    {% endif %}
+  {% endfor %}
+  {% if page < total_pages %}<a href="?{{ qs }}page={{ page + 1 }}">→</a>{% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,34 @@
+# Local data + caches (don't bake into image — volume mount)
+data/
+*.duckdb
+*.duckdb.wal
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Local secrets — Railway uses env vars
+.env
+.env.local
+
+# Test + scratch
+spike/
+tests/__pycache__/
+digests/
+config/games/watchlist.yaml
+
+# Git + docs
+.git/
+.gitignore
+*.md
+!README.md

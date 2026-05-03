@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% block title %}{{ bill.bill_id }} — {{ bill.title }}{% endblock %}
+{% block content %}
+<style>
+  .bill-head {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 24px;
+  }
+  .bill-head .crumb {
+    color: var(--fg-muted);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .bill-head .crumb .num {
+    font-family: var(--mono);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .bill-head h1 {
+    margin: 4px 0 12px;
+    font-size: 32px;
+    line-height: 1.2;
+    max-width: 900px;
+  }
+  .bill-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    color: var(--fg-muted);
+    font-size: 14px;
+  }
+  .bill-meta strong { color: var(--fg); }
+
+  .bill-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 32px;
+  }
+  @media (max-width: 900px) { .bill-grid { grid-template-columns: 1fr; } }
+
+  section.block {
+    margin-bottom: 32px;
+  }
+  section.block h2 {
+    font-family: var(--serif);
+    font-size: 20px;
+    margin: 0 0 4px;
+  }
+  section.block .sub {
+    color: var(--fg-muted);
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  .sponsor-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .sponsor-card .ph {
+    width: 80px;
+    height: 100px;
+    border-radius: 4px;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    flex-shrink: 0;
+  }
+  .sponsor-card .info { min-width: 0; }
+  .sponsor-card .label {
+    color: var(--fg-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+  .sponsor-card .name {
+    font-family: var(--serif);
+    font-size: 19px;
+    color: var(--fg);
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .sponsor-card .name a { color: var(--fg); }
+  .sponsor-card .name a:hover { color: var(--accent); }
+  .sponsor-card .who { color: var(--fg-muted); font-size: 13px; }
+
+  .cosp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 8px;
+  }
+  .cosp-grid a {
+    display: block;
+    text-align: center;
+  }
+  .cosp-grid .ph {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    margin-bottom: 4px;
+    border: 2px solid var(--bg-elev);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  .cosp-grid a:hover .ph { box-shadow: 0 0 0 2px var(--accent); }
+  .cosp-grid .nm {
+    font-size: 11px;
+    color: var(--fg-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cosp-grid .badge { font-size: 9px; min-width: 14px; height: 14px; padding: 0 4px; }
+
+  .roll-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  .roll-card h3 {
+    margin: 0 0 4px;
+    font-family: var(--serif);
+    font-size: 17px;
+  }
+  .roll-card .when {
+    color: var(--fg-muted);
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  .tally {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .tally .t {
+    text-align: center;
+    padding: 8px;
+    border-radius: 4px;
+  }
+  .tally .t.yea { background: #e6f4ea; }
+  .tally .t.nay { background: #fceaea; }
+  .tally .t.miss { background: var(--bg-elev-2); }
+  .tally .t .v { font-size: 22px; font-weight: 600; font-family: var(--serif); }
+  .tally .t.yea .v { color: #1a7f37; }
+  .tally .t.nay .v { color: #b62428; }
+  .tally .t.miss .v { color: var(--fg-muted); }
+  .tally .t .l { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; }
+
+  .by-party {
+    font-size: 12px;
+    color: var(--fg-muted);
+    margin-top: 8px;
+  }
+  .by-party .pp { display: inline-block; margin-right: 16px; }
+  .by-party .pp strong { color: var(--fg); }
+
+  .side-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  .side-card h3 {
+    font-family: var(--sans);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+  .side-card .row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 13px; }
+  .side-card .row + .row { border-top: 1px solid var(--border-muted); }
+  .side-card .row .l { color: var(--fg-muted); }
+  .side-card .row .v { color: var(--fg); font-weight: 500; }
+
+  .ext-link {
+    display: block;
+    padding: 10px 16px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .ext-link:hover { background: var(--bg-elev-2); border-color: var(--accent); text-decoration: none; }
+  .ext-link .arrow { float: right; color: var(--fg-muted); }
+</style>
+
+<div class="bill-head">
+  <div class="crumb">
+    <span class="num">{{ bill.bill_type|upper }} {{ bill.number }}</span>
+    · {{ bill.congress }}th Congress
+    {% if bill.policy_area %} · {{ bill.policy_area }}{% endif %}
+  </div>
+  <h1>{{ bill.title }}</h1>
+  <div class="bill-meta">
+    {% if bill.introduced_date %}<span>Introduced <strong>{{ bill.introduced_date.strftime('%B %d, %Y') }}</strong></span>{% endif %}
+    {% if bill.latest_action_date %}<span>Latest action <strong>{{ bill.latest_action_date.strftime('%B %d, %Y') }}</strong></span>{% endif %}
+    <span><strong>{{ bill.cosponsor_count }}</strong> cosponsor{{ '' if bill.cosponsor_count == 1 else 's' }}</span>
+  </div>
+</div>
+
+<div class="bill-grid">
+  <div>
+    {% if sponsor %}
+    <section class="block">
+      <h2>Sponsor</h2>
+      <div class="sponsor-card">
+        <a href="/legislator/{{ sponsor.bioguide_id }}"><div class="ph" style="background-image: url('{{ big_photo(sponsor.bioguide_id) }}');"></div></a>
+        <div class="info">
+          <div class="label">Introduced by</div>
+          <div class="name"><a href="/legislator/{{ sponsor.bioguide_id }}">{{ sponsor.full_name }}</a></div>
+          <div class="who">
+            {% set p = sponsor.party[0] if sponsor.party else 'I' %}
+            <span class="badge {{ p }}">{{ p }}</span>
+            {{ sponsor.party }} ·
+            {{ sponsor.chamber|title }} ·
+            {{ sponsor.state }}{% if sponsor.district is not none and sponsor.district != 0 %}-{{ '%02d'|format(sponsor.district) }}{% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if bill.latest_action_text %}
+    <section class="block">
+      <h2>Latest action</h2>
+      <p style="margin: 8px 0 0; font-family: var(--serif); font-size: 16px; color: var(--fg);">
+        {{ bill.latest_action_text }}
+      </p>
+    </section>
+    {% endif %}
+
+    {% if actions %}
+    <section class="block">
+      <h2>Action timeline</h2>
+      <p class="sub">Every recorded action on this bill, newest first. Stage badges color-code the legislative path.</p>
+      <style>
+        .timeline {
+          position: relative;
+          padding-left: 28px;
+          border-left: 2px solid var(--border);
+        }
+        .tl-row {
+          position: relative;
+          padding: 12px 0 12px 16px;
+          margin-left: -2px;
+          border-left: 2px solid transparent;
+        }
+        .tl-row::before {
+          content: '';
+          position: absolute;
+          left: -8px;
+          top: 18px;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: var(--bg-elev);
+          border: 2px solid var(--fg-faint);
+        }
+        .tl-row.introduced::before { border-color: #2f5d8a; background: #cfe1f5; }
+        .tl-row.committee::before  { border-color: #8a5a00; background: #fff4d6; }
+        .tl-row.floor::before      { border-color: #5e3b8c; background: #ece0f7; }
+        .tl-row.passed::before     { border-color: #1a7f37; background: #c7e4c8; }
+        .tl-row.sent::before       { border-color: #5a5650; background: #ece8de; }
+        .tl-row.signed::before     { border-color: #1a7f37; background: #1a7f37; }
+        .tl-row.vetoed::before     { border-color: #b62428; background: #b62428; }
+        .tl-row .when {
+          color: var(--fg-muted);
+          font-size: 12px;
+          font-family: var(--mono);
+          margin-bottom: 2px;
+        }
+        .tl-row .stage-pill {
+          display: inline-block;
+          padding: 1px 8px;
+          margin-right: 8px;
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          vertical-align: 1px;
+        }
+        .tl-row.introduced .stage-pill { background: #cfe1f5; color: #2f5d8a; }
+        .tl-row.committee  .stage-pill { background: #fff4d6; color: #8a5a00; }
+        .tl-row.floor      .stage-pill { background: #ece0f7; color: #5e3b8c; }
+        .tl-row.passed     .stage-pill { background: #c7e4c8; color: #1a7f37; }
+        .tl-row.sent       .stage-pill { background: #ece8de; color: #5a5650; }
+        .tl-row.signed     .stage-pill { background: #1a7f37; color: #fff; }
+        .tl-row.vetoed     .stage-pill { background: #b62428; color: #fff; }
+        .tl-row.other      .stage-pill { background: var(--bg-elev-2); color: var(--fg-muted); }
+        .tl-row .text {
+          font-family: var(--serif);
+          font-size: 15px;
+          line-height: 1.4;
+          color: var(--fg);
+        }
+        .tl-row .committees {
+          color: var(--fg-muted);
+          font-size: 12px;
+          margin-top: 4px;
+        }
+      </style>
+      <div class="timeline">
+        {% for a in actions %}
+          {% set stage = stage_for_action(a) %}
+          <div class="tl-row {{ stage }}">
+            <div class="when">{{ a.when.strftime('%b %d, %Y') }}</div>
+            <span class="stage-pill">{{ stage }}</span>
+            <span class="text">{{ a.text }}</span>
+            {% if a.committees %}<div class="committees">{{ a.committees|join(' · ') }}</div>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if tallies %}
+    <section class="block">
+      <h2>Roll-call votes</h2>
+      <p class="sub">Floor votes recorded on this bill.</p>
+      {% for t in tallies %}
+        <div class="roll-card">
+          <h3>Roll call #{{ t.rollcall_num }} — {{ t.question }}</h3>
+          <div class="when">{{ t.when.strftime('%B %d, %Y') }}{% if t.result %} · <strong>{{ t.result }}</strong>{% endif %}</div>
+          <div class="tally">
+            <div class="t yea"><div class="v">{{ t.yea }}</div><div class="l">Yea</div></div>
+            <div class="t nay"><div class="v">{{ t.nay }}</div><div class="l">Nay</div></div>
+            <div class="t miss"><div class="v">{{ t.missed }}</div><div class="l">Missed</div></div>
+          </div>
+          <div class="by-party">
+            {% for party, breakdown in t.by_party.items() %}
+              <span class="pp">{% set p = party[0] if party else 'I' %}<span class="badge {{ p }}">{{ p }}</span>
+                <strong>{{ breakdown.Yea }}</strong>–<strong>{{ breakdown.Nay }}</strong>
+                {% if breakdown.Missed %} ({{ breakdown.Missed }} missed){% endif %}
+              </span>
+            {% endfor %}
+          </div>
+          {% if t.url %}
+            <a href="{{ t.url }}" target="_blank" rel="noopener" style="font-size: 12px; color: var(--fg-muted);">view official roll-call →</a>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if bill.text_versions %}
+    <section class="block">
+      <h2>Text versions</h2>
+      <p class="sub">Each stage of the bill — official text published by GPO. Click any format to read on congress.gov / govinfo.</p>
+      <style>
+        .versions { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; }
+        .ver-row {
+          display: grid;
+          grid-template-columns: 100px 1fr auto;
+          gap: 16px;
+          align-items: center;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--border-muted);
+        }
+        .ver-row:last-child { border-bottom: none; }
+        .ver-row .when { color: var(--fg-muted); font-size: 12px; font-family: var(--mono); }
+        .ver-row .type { font-family: var(--serif); font-size: 15px; color: var(--fg); }
+        .ver-row .formats { display: flex; gap: 8px; flex-wrap: wrap; }
+        .ver-row .formats a {
+          padding: 3px 10px;
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          font-size: 11px;
+          color: var(--fg-muted);
+          font-family: var(--mono);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .ver-row .formats a:hover { background: var(--bg-elev-2); color: var(--accent); border-color: var(--accent); text-decoration: none; }
+      </style>
+      <div class="versions">
+        {% for v in bill.text_versions %}
+          <div class="ver-row">
+            <span class="when">{{ v.date or '—' }}</span>
+            <span class="type">{{ v.type or 'Unknown' }}</span>
+            <div class="formats">
+              {% for f in (v.formats or []) %}
+                {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.type }}</a>{% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if cosponsors %}
+    <section class="block">
+      <h2>Cosponsors ({{ cosponsors|length }})</h2>
+      <p class="sub">Members who signed on to support this bill.</p>
+      <div class="cosp-grid">
+        {% for c in cosponsors %}
+          {% set p = c.entity.party[0] if c.entity.party else 'I' %}
+          <a href="/legislator/{{ c.entity.bioguide_id }}" title="{{ c.entity.full_name }} ({{ c.entity.state }}-{{ p }}){% if c.is_original %} · original cosponsor{% endif %}">
+            <div class="ph" style="background-image: url('{{ photo(c.entity.bioguide_id) }}');"></div>
+            <div class="nm">{{ c.entity.last_name }} <span class="badge {{ p }}">{{ p }}</span></div>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside>
+    <div class="side-card">
+      <h3>Bill summary</h3>
+      <div class="row"><span class="l">Bill ID</span><span class="v mono">{{ bill.bill_id }}</span></div>
+      <div class="row"><span class="l">Type</span><span class="v">{{ bill.bill_type|upper }}</span></div>
+      <div class="row"><span class="l">Number</span><span class="v">{{ bill.number }}</span></div>
+      <div class="row"><span class="l">Congress</span><span class="v">{{ bill.congress }}th</span></div>
+      {% if bill.introduced_date %}<div class="row"><span class="l">Introduced</span><span class="v">{{ bill.introduced_date.isoformat() }}</span></div>{% endif %}
+      <div class="row"><span class="l">Cosponsors</span><span class="v">{{ bill.cosponsor_count }}</span></div>
+    </div>
+
+    {% if bill.url %}
+      <a class="ext-link" href="{{ bill.url }}" target="_blank" rel="noopener">
+        Official record on congress.gov<span class="arrow">→</span>
+      </a>
+    {% endif %}
+    <a class="ext-link" href="{{ bill.url }}/text" target="_blank" rel="noopener">
+      Full bill text<span class="arrow">→</span>
+    </a>
+    <a class="ext-link" href="{{ bill.url }}/cosponsors" target="_blank" rel="noopener">
+      All cosponsors on congress.gov<span class="arrow">→</span>
+    </a>
+  </aside>
+</div>
+{% endblock %}

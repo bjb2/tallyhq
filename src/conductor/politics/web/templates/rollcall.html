@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}Roll-call #{{ d.rollcall_num }} — {{ d.chamber|title }} — Conductor{% endblock %}
+{% block content %}
+<style>
+  .rc-head {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 24px;
+  }
+  .rc-crumb {
+    color: var(--fg-muted);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .rc-crumb .num { font-family: var(--mono); color: var(--fg); font-weight: 600; }
+  .rc-head h1 {
+    font-size: 28px;
+    margin: 4px 0 8px;
+    line-height: 1.2;
+    max-width: 900px;
+  }
+  .rc-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    color: var(--fg-muted);
+    font-size: 14px;
+  }
+  .rc-meta strong { color: var(--fg); }
+
+  .tally-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .tt {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 18px;
+  }
+  .tt .v { font-size: 28px; font-weight: 600; font-family: var(--serif); }
+  .tt.yea .v { color: #1a7f37; }
+  .tt.nay .v { color: #b62428; }
+  .tt.miss .v { color: var(--fg-muted); }
+  .tt.pres .v { color: var(--fg); }
+  .tt .l { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+
+  .by-party {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .by-party h3 {
+    font-family: var(--sans);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+  .by-party table { border-collapse: collapse; width: 100%; }
+  .by-party th, .by-party td { padding: 6px 8px; text-align: left; font-size: 13px; }
+  .by-party th { color: var(--fg-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border-muted); }
+  .by-party td { border-bottom: 1px solid var(--border-muted); font-variant-numeric: tabular-nums; }
+  .by-party td:first-child { width: 80px; }
+  .by-party .yea { color: #1a7f37; font-weight: 600; }
+  .by-party .nay { color: #b62428; font-weight: 600; }
+
+  section.vote-block { margin-bottom: 32px; }
+  section.vote-block h2 {
+    font-family: var(--serif);
+    font-size: 20px;
+    margin: 0 0 4px;
+  }
+  section.vote-block .lead {
+    color: var(--fg-muted);
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .vote-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 6px;
+  }
+  .vote-card {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--border-muted);
+    border-radius: 6px;
+    align-items: center;
+    background: var(--bg-elev);
+  }
+  .vote-card:hover { border-color: var(--fg-muted); text-decoration: none; }
+  .vote-card .ph {
+    width: 28px; height: 36px;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .vote-card .nm {
+    font-size: 12px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .vote-card .meta {
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .vote-card.break { box-shadow: inset 3px 0 0 #d29922; }
+</style>
+
+<div class="rc-head">
+  <div class="rc-crumb">
+    <span class="num">{{ d.chamber|upper }} Roll-call #{{ d.rollcall_num }}</span>
+    · {{ d.congress }}th Congress{% if d.session %} · Session {{ d.session }}{% endif %}
+    {% if d.legis_num %}
+      {% set bp = bill_path(d.congress, d.legis_num) %}
+      · {% if bp %}<a href="{{ bp }}">{{ d.legis_num }}</a>{% else %}{{ d.legis_num }}{% endif %}
+    {% endif %}
+  </div>
+  <h1>{{ d.question }}</h1>
+  <div class="rc-meta">
+    <span>{{ d.occurred_at.strftime('%B %d, %Y · %I:%M %p UTC') }}</span>
+    {% if d.result %}<span><strong>{{ d.result }}</strong></span>{% endif %}
+    {% if d.url %}<span><a href="{{ d.url }}" target="_blank" rel="noopener">official record →</a></span>{% endif %}
+  </div>
+</div>
+
+<div class="tally-strip">
+  <div class="tt yea"><div class="l">Yea</div><div class="v">{{ d.yea }}</div></div>
+  <div class="tt nay"><div class="l">Nay</div><div class="v">{{ d.nay }}</div></div>
+  <div class="tt pres"><div class="l">Present</div><div class="v">{{ d.present }}</div></div>
+  <div class="tt miss"><div class="l">Not voting</div><div class="v">{{ d.missed }}</div></div>
+</div>
+
+<div class="by-party">
+  <h3>By party</h3>
+  <table>
+    <thead><tr><th>Party</th><th>Yea</th><th>Nay</th><th>Pres</th><th>Missed</th></tr></thead>
+    <tbody>
+    {% for party, b in d.by_party.items() %}
+      <tr>
+        <td>
+          {% set p = party[0] if party else 'I' %}
+          <span class="badge {{ p }}">{{ p }}</span> {{ party }}
+        </td>
+        <td class="yea">{{ b.Yea }}</td>
+        <td class="nay">{{ b.Nay }}</td>
+        <td>{{ b.Present }}</td>
+        <td>{{ b['Not Voting'] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% set yea_votes = d.votes | selectattr('position', 'eq', 'Yea') | list %}
+{% set nay_votes = d.votes | selectattr('position', 'eq', 'Nay') | list %}
+{% set present_votes = d.votes | selectattr('position', 'eq', 'Present') | list %}
+{% set missed_votes = d.votes | rejectattr('position', 'in', ['Yea','Nay','Present']) | list %}
+
+{% if yea_votes %}
+<section class="vote-block">
+  <h2>Yea ({{ yea_votes|length }})</h2>
+  <p class="lead">Members who voted in favor.</p>
+  <div class="vote-grid">
+    {% for v in yea_votes %}
+      {% set p = v.party[0] if v.party else 'I' %}
+      <a class="vote-card{% if v.party_line == false %} break{% endif %}" href="/legislator/{{ v.entity.bioguide_id }}">
+        <div class="ph" style="background-image: url('{{ photo(v.entity.bioguide_id) }}');"></div>
+        <div style="min-width:0">
+          <div class="nm">{{ v.entity.last_name }}</div>
+          <div class="meta"><span class="badge {{ p }}">{{ p }}</span> {{ v.state }}</div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if nay_votes %}
+<section class="vote-block">
+  <h2>Nay ({{ nay_votes|length }})</h2>
+  <p class="lead">Members who voted against.</p>
+  <div class="vote-grid">
+    {% for v in nay_votes %}
+      {% set p = v.party[0] if v.party else 'I' %}
+      <a class="vote-card{% if v.party_line == false %} break{% endif %}" href="/legislator/{{ v.entity.bioguide_id }}">
+        <div class="ph" style="background-image: url('{{ photo(v.entity.bioguide_id) }}');"></div>
+        <div style="min-width:0">
+          <div class="nm">{{ v.entity.last_name }}</div>
+          <div class="meta"><span class="badge {{ p }}">{{ p }}</span> {{ v.state }}</div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if missed_votes or present_votes %}
+<section class="vote-block">
+  <h2>Did not vote ({{ (missed_votes|length) + (present_votes|length) }})</h2>
+  <p class="lead">Missed (absent) and present (abstaining).</p>
+  <div class="vote-grid">
+    {% for v in missed_votes + present_votes %}
+      {% set p = v.party[0] if v.party else 'I' %}
+      <a class="vote-card" href="/legislator/{{ v.entity.bioguide_id }}">
+        <div class="ph" style="background-image: url('{{ photo(v.entity.bioguide_id) }}');"></div>
+        <div style="min-width:0">
+          <div class="nm">{{ v.entity.last_name }}</div>
+          <div class="meta"><span class="badge {{ p }}">{{ p }}</span> {{ v.state }} · {{ v.position }}</div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<p class="muted" style="margin-top: 32px; font-size: 12px;">
+  <span class="break" style="display:inline-block;width:10px;height:10px;background:#fff4d6;border-left:3px solid #d29922;vertical-align:middle"></span>
+  yellow border = vote against own party majority (break)
+</p>
+{% endblock %}

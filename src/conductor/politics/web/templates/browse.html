@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Roster — TallyHQ{% endblock %}
+{% block content %}
+<style>
+  .filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .filters form { display: flex; gap: 8px; flex-wrap: wrap; }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .seg a {
+    padding: 5px 12px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    border-right: 1px solid var(--border);
+  }
+  .seg a:last-child { border-right: none; }
+  .seg a:hover { background: var(--bg-elev); text-decoration: none; color: var(--fg); }
+  .seg a.active { background: var(--bg-elev-2); color: var(--fg); }
+
+  .summary { color: var(--fg-muted); margin-bottom: 16px; font-size: 13px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .leg-card {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 120ms, transform 120ms;
+  }
+  .leg-card:hover {
+    border-color: var(--fg-muted);
+    transform: translateY(-1px);
+    text-decoration: none;
+  }
+  .leg-card .ph {
+    width: 56px;
+    height: 68px;
+    border-radius: 6px;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    flex-shrink: 0;
+    border: 1px solid var(--border-muted);
+  }
+  .leg-card .info { min-width: 0; flex: 1; }
+  .leg-card .name {
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .leg-card .row2 { color: var(--fg-muted); font-size: 12px; margin-top: 4px; }
+  .leg-card .row3 { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+
+  .agg-panel {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: 2fr 3fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px) { .agg-panel { grid-template-columns: 1fr; } }
+  .agg-panel h3 {
+    font-family: var(--sans);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    margin: 0 0 6px;
+    font-weight: 600;
+  }
+  .agg-cells { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  @media (max-width: 720px) { .agg-cells { grid-template-columns: repeat(2, 1fr); } }
+  .agg-cells .c .lbl { color: var(--fg-muted); font-size: 11px; }
+  .agg-cells .c .v   { font-family: var(--serif); font-size: 18px; font-weight: 600; color: var(--fg); }
+  .agg-party { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .agg-party .p { font-size: 13px; color: var(--fg); }
+  .agg-party .p .badge { margin-right: 4px; }
+  .agg-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .agg-top a { display: flex; align-items: center; gap: 6px; color: var(--fg); font-size: 13px; }
+  .agg-top a:hover { text-decoration: none; color: var(--accent); }
+  .agg-top .ph {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--bg-elev-2) center/cover no-repeat;
+    border: 1px solid var(--border-muted);
+  }
+  .committee-banner {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+  .committee-banner strong { color: var(--fg); font-family: var(--serif); font-size: 15px; }
+  .committee-banner a { margin-left: 10px; }
+
+  .filter-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .filter-row .field, .filter-row select.field {
+    height: 28px;
+    font-size: 13px;
+  }
+  .filter-row select.field { padding-right: 24px; max-width: 320px; }
+</style>
+
+<div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+  <h1 style="font-size: 22px; margin: 0;">US Congress</h1>
+  <span class="muted">{{ count }} {% if count == 1 %}member{% else %}members{% endif %} shown</span>
+</div>
+
+<form method="get" action="/browse" class="filter-row">
+  <span class="seg">
+    <a href="/browse" class="{% if not chamber %}active{% endif %}">All</a>
+    <a href="/browse?chamber=house" class="{% if chamber == 'house' %}active{% endif %}">House</a>
+    <a href="/browse?chamber=senate" class="{% if chamber == 'senate' %}active{% endif %}">Senate</a>
+  </span>
+  <span class="seg">
+    <a href="/browse{% if chamber %}?chamber={{ chamber }}{% endif %}" class="{% if not party %}active{% endif %}">Any party</a>
+    <a href="/browse?party=Republican{% if chamber %}&chamber={{ chamber }}{% endif %}" class="{% if party == 'Republican' %}active{% endif %}">R</a>
+    <a href="/browse?party=Democrat{% if chamber %}&chamber={{ chamber }}{% endif %}" class="{% if party == 'Democrat' %}active{% endif %}">D</a>
+    <a href="/browse?party=Independent{% if chamber %}&chamber={{ chamber }}{% endif %}" class="{% if party == 'Independent' %}active{% endif %}">I</a>
+  </span>
+  {% if chamber %}<input type="hidden" name="chamber" value="{{ chamber }}" />{% endif %}
+  {% if party %}<input type="hidden" name="party" value="{{ party }}" />{% endif %}
+  <input class="field" name="state" maxlength="2" placeholder="State" value="{{ state or '' }}" style="width: 70px; text-transform: uppercase;" />
+  <select class="field" name="committee">
+    <option value="">Any committee</option>
+    {% for c in committees_list %}
+      <option value="{{ c.code }}" {% if committee == c.code %}selected{% endif %}>{% if c.is_sub %}&nbsp;&nbsp;↳ {% endif %}{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn" type="submit">Apply</button>
+  {% if chamber or state or party or committee or q %}<a class="muted" href="/browse" style="font-size: 12px;">clear all</a>{% endif %}
+</form>
+
+{% if committee_obj %}
+<div class="committee-banner">
+  <strong>{{ committee_obj.name }}</strong>
+  <span class="muted">· {{ committee_obj.chamber|title }}{% if committee_obj.type == 'subcommittee' %} subcommittee{% endif %}</span>
+  <a class="muted" href="/browse" style="font-size: 12px;">remove filter</a>
+</div>
+{% endif %}
+
+{% if agg.members %}
+<div class="agg-panel">
+  <div>
+    <h3>Selection</h3>
+    <div class="agg-party">
+      {% for party_name, n in agg.by_party.items() %}
+        {% set p = party_name[0] if party_name and party_name[0].isupper() else 'I' %}
+        <span class="p"><span class="badge {{ p }}">{{ p }}</span>{{ n }} {{ party_name }}</span>
+      {% endfor %}
+    </div>
+    {% if agg.top %}
+    <h3 style="margin-top: 12px;">Most active in selection</h3>
+    <div class="agg-top">
+      {% for t in agg.top %}
+        <a href="/legislator/{{ t.entity.bioguide_id }}">
+          <div class="ph" style="background-image: url('{{ photo(t.entity.bioguide_id) }}');"></div>
+          {{ t.entity.last_name }} <span class="muted">· {{ "{:,}".format(t.count) }} events</span>
+        </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <div>
+    <h3>Activity totals (life-of-dataset)</h3>
+    <div class="agg-cells">
+      <div class="c"><div class="lbl">Votes cast</div><div class="v">{{ "{:,}".format(agg.votes) }}</div></div>
+      <div class="c"><div class="lbl">Party-line breaks</div><div class="v">{{ "{:,}".format(agg.breaks) }}</div></div>
+      <div class="c"><div class="lbl">Bills sponsored</div><div class="v">{{ "{:,}".format(agg.sponsored) }}</div></div>
+      <div class="c"><div class="lbl">Cosponsorships</div><div class="v">{{ "{:,}".format(agg.cosponsored) }}</div></div>
+      <div class="c"><div class="lbl">Floor speeches</div><div class="v">{{ "{:,}".format(agg.speeches) }}</div></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid">
+  {% for r in roster %}
+    {% set p = (r.party[0] if r.party else 'I') %}
+    <a class="leg-card" href="/legislator/{{ r.bioguide_id }}">
+      <div class="ph" style="background-image: url('{{ photo(r.bioguide_id) }}');"></div>
+      <div class="info">
+        <div class="name">{{ r.full_name }}</div>
+        <div class="row2">
+          {{ r.chamber|title }} ·
+          {{ r.state }}{% if r.district is not none and r.district != 0 %}-{{ '%02d'|format(r.district) }}{% endif %}
+        </div>
+        <div class="row3">
+          <span class="badge {{ p }}">{{ p }}</span>
+          <span class="muted mono">{{ r.bioguide_id }}</span>
+        </div>
+      </div>
+    </a>
+  {% endfor %}
+</div>
+{% endblock %}

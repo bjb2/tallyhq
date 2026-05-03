@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Data + DBs (volume-mounted in production)
+data/
+*.duckdb
+*.duckdb.wal
+*.bak
+
+# Local secrets
+.env
+.env.local
+*.local
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Build
+dist/
+build/

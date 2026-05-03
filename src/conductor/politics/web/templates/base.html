@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{% block title %}TallyHQ — observing the US Congress{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='4' height='4' rx='1' fill='%231a7f37'/%3E%3Crect x='6' y='1' width='4' height='4' rx='1' fill='%23116329'/%3E%3Crect x='11' y='1' width='4' height='4' rx='1' fill='%231a7f37'/%3E%3Crect x='1' y='6' width='4' height='4' rx='1' fill='%234ac26b'/%3E%3Crect x='6' y='6' width='4' height='4' rx='1' fill='%231a7f37'/%3E%3Crect x='11' y='6' width='4' height='4' rx='1' fill='%23116329'/%3E%3Crect x='1' y='11' width='4' height='4' rx='1' fill='%23116329'/%3E%3Crect x='6' y='11' width='4' height='4' rx='1' fill='%234ac26b'/%3E%3Crect x='11' y='11' width='4' height='4' rx='1' fill='%231a7f37'/%3E%3C/svg%3E" />
+<style>
+  :root[data-theme="light"] {
+    --bg:           #fbfaf7;          /* warm paper */
+    --bg-elev:      #ffffff;          /* card */
+    --bg-elev-2:    #f3efe7;          /* subtle wash */
+    --border:       #e2ddd2;
+    --border-muted: #ece8de;
+    --fg:           #1d1d1b;
+    --fg-muted:     #5e5a52;
+    --fg-faint:     #a39d8f;
+    --accent:       #2f5d8a;          /* newspaper blue */
+    --accent-hover: #1f4569;
+    --green:        #1a7f37;
+    --red:          #b62428;
+    --r-fill:       #b62428;
+    --d-fill:       #2f5d8a;
+    --i-fill:       #6e7781;
+    --shadow:       0 1px 2px rgba(20, 20, 20, 0.04), 0 8px 24px rgba(20, 20, 20, 0.06);
+    --serif:        "Source Serif 4", Iowan Old Style, "Charter", Georgia, serif;
+    --sans:         "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono:         "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, .serif { font-family: var(--serif); font-weight: 600; letter-spacing: -0.005em; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent-hover); text-decoration: underline; }
+  code, pre, .mono { font-family: var(--mono); font-size: 12px; }
+
+  /* Header */
+  header.site {
+    background: rgba(251, 250, 247, 0.92);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  header.site .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--fg);
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: -0.01em;
+  }
+  header.site .brand:hover { text-decoration: none; color: var(--fg); }
+  header.site .brand svg { display: block; }
+  header.site .brand .sub {
+    color: var(--fg-muted);
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: 13px;
+    font-style: italic;
+  }
+  header.site .topnav {
+    display: flex;
+    gap: 16px;
+    margin-left: 6px;
+    padding-left: 14px;
+    border-left: 1px solid var(--border);
+  }
+  header.site .topnav a {
+    color: var(--fg-muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  header.site .topnav a:hover { color: var(--fg); text-decoration: none; }
+  @media (max-width: 720px) {
+    header.site .topnav { padding-left: 10px; gap: 10px; margin-left: 2px; }
+    header.site .topnav a { font-size: 13px; }
+  }
+  header.site .grow { flex: 1; }
+  header.site .search {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 7px 14px;
+    color: var(--fg);
+    width: 280px;
+    font: inherit;
+    font-size: 14px;
+    transition: border-color 120ms, background 120ms;
+  }
+  header.site .search:focus { outline: none; border-color: var(--accent); background: #fff; }
+
+  /* Mobile header */
+  @media (max-width: 720px) {
+    header.site {
+      padding: 12px 14px;
+      gap: 10px;
+    }
+    header.site .brand .sub { display: none; }
+    header.site .brand { font-size: 16px; gap: 6px; }
+    header.site .search {
+      width: 100%;
+      min-width: 0;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    header.site .grow { min-width: 0; }
+    header.site > a.muted { display: none; }   /* hide github link on mobile */
+    main { padding: 16px; }
+  }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-block;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-elev);
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms;
+  }
+  .btn:hover { background: var(--bg-elev-2); border-color: var(--fg-muted); text-decoration: none; }
+  .btn-primary { background: #238636; border-color: rgba(240,246,252,0.1); color: #fff; }
+  .btn-primary:hover { background: #2ea043; color: #fff; }
+
+  /* Inputs */
+  input.field, select.field {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: var(--fg);
+    font: inherit;
+  }
+  input.field:focus, select.field:focus { outline: none; border-color: var(--accent); }
+
+  /* Party badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1;
+  }
+  .badge.R { background: var(--r-fill); }
+  .badge.D { background: var(--d-fill); }
+  .badge.I, .badge.ID, .badge.L { background: var(--i-fill); }
+  .badge.tag {
+    background: transparent;
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+    padding: 1px 8px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .card-pad { padding: 16px; }
+  .card-shadow { box-shadow: var(--shadow); }
+
+  .muted { color: var(--fg-muted); }
+  .faint { color: var(--fg-faint); }
+  .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .stack { display: flex; flex-direction: column; gap: 4px; }
+</style>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 16 16">
+      <rect x="1" y="1" width="4" height="4" rx="1" fill="#4ac26b"/>
+      <rect x="6" y="1" width="4" height="4" rx="1" fill="#116329"/>
+      <rect x="11" y="1" width="4" height="4" rx="1" fill="#4ac26b"/>
+      <rect x="1" y="6" width="4" height="4" rx="1" fill="#aceebb"/>
+      <rect x="6" y="6" width="4" height="4" rx="1" fill="#1a7f37"/>
+      <rect x="11" y="6" width="4" height="4" rx="1" fill="#116329"/>
+      <rect x="1" y="11" width="4" height="4" rx="1" fill="#116329"/>
+      <rect x="6" y="11" width="4" height="4" rx="1" fill="#aceebb"/>
+      <rect x="11" y="11" width="4" height="4" rx="1" fill="#1a7f37"/>
+    </svg>
+    TallyHQ
+  </a>
+  <nav class="topnav">
+    <a href="/browse">Members</a>
+    <a href="/bills">Bills</a>
+  </nav>
+  <form method="get" action="/" class="grow">
+    <input class="search" type="search" name="q" placeholder="Search legislators…" value="{{ (q or '')|e }}" />
+  </form>
+  <a class="muted" href="https://github.com/bjb2/tallyhq" target="_blank" rel="noopener">github</a>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
