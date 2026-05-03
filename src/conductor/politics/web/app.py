@@ -265,19 +265,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def landing(q: str | None = Query(None, max_length=80)):
+        # Header search submits to "/" — punt to /browse for the actual results
+        # so the full filter context (committees, aggregates) renders.
+        if q:
+            return RedirectResponse(url=f"/browse?q={q}", status_code=302)
         store = get_store()
         try:
-            # Search shortcut: redirect-style render directly to browse results
-            if q:
-                roster = entities.list_all(store)
-                ql = q.lower()
-                roster = [r for r in roster if ql in r.full_name.lower() or ql in r.last_name.lower()]
-                tmpl = env.get_template("browse.html")
-                return tmpl.render(
-                    roster=roster, count=len(roster),
-                    chamber=None, state=None, party=None, q=q,
-                    photo=lambda b: photo_url(b, "225x275"),
-                )
 
             totals = landing_mod.totals(store)
             term = _congress_term_context()
