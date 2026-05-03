@@ -6,8 +6,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# CLI reads PORT + HOST from env vars; no shell expansion needed.
-startCommand = "python -m conductor.cli --db /data/conductor.duckdb politics web --host 0.0.0.0"
+# Intentionally no startCommand — let the Dockerfile's ENTRYPOINT
+# (entrypoint.sh) + CMD chain run. startCommand replaces the whole
+# image command and would skip the entrypoint's seed-DB step.
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 healthcheckPath = "/"
