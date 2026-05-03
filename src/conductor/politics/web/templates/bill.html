@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{% if bill %}{{ bill.bill_id }} — {{ bill.title }}{% else %}{{ bill_stub.bill_type|upper }} {{ bill_stub.number }} — TallyHQ{% endif %}{% endblock %}
+{% block og_title %}{% if bill %}{{ bill.bill_type|upper }} {{ bill.number }} — {{ bill.title[:160] }}{% else %}{{ bill_stub.bill_type|upper }} {{ bill_stub.number }} — TallyHQ{% endif %}{% endblock %}
+{% block og_description %}{% if bill %}{{ bill.congress }}th Congress · {{ bill.cosponsor_count }} cosponsors{% if bill.latest_action_text %} · {{ bill.latest_action_text[:120] }}{% endif %}{% else %}A bill in the {{ bill_stub.congress }}th Congress not yet in our index.{% endif %}{% endblock %}
+{% block og_url %}https://tallyhq.org/bill/{% if bill %}{{ bill.congress }}/{{ bill.bill_type }}/{{ bill.number }}{% else %}{{ bill_stub.congress }}/{{ bill_stub.bill_type }}/{{ bill_stub.number }}{% endif %}{% endblock %}
 {% block content %}
 
 {% if not bill %}
@@ -484,6 +487,87 @@
           </div>
         {% endfor %}
       </div>
+    </section>
+    {% endif %}
+
+    {% if lobby_clients %}
+    <section class="block">
+      <h2>Lobbied by</h2>
+      <p class="sub">Top organizations whose lobbying filings reference this bill, ranked by filing count.</p>
+      <style>
+        .lobby-list {
+          background: var(--bg-elev);
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        .lobby-row {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 12px;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--border-muted);
+          align-items: center;
+        }
+        .lobby-row:last-child { border-bottom: none; }
+        .lobby-row:hover { background: var(--bg-elev-2); }
+        .lobby-row .who {
+          min-width: 0;
+          display: flex; flex-direction: column; gap: 2px;
+        }
+        .lobby-row .who a {
+          color: var(--fg);
+          font-size: 13px;
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .lobby-row .codes { display: flex; gap: 4px; flex-wrap: wrap; }
+        .lobby-row .code {
+          font-family: var(--mono);
+          font-size: 10px;
+          color: var(--fg-muted);
+          background: var(--bg-elev-2);
+          padding: 1px 6px;
+          border-radius: 3px;
+        }
+        .lobby-row .stat {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+        }
+        .lobby-row .stat .v {
+          font-family: var(--serif);
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--fg);
+        }
+        .lobby-row .stat .l {
+          font-size: 11px;
+          color: var(--fg-muted);
+        }
+      </style>
+      <div class="lobby-list">
+        {% for c in lobby_clients %}
+        <div class="lobby-row">
+          <div class="who">
+            <a href="/lobby/client/{{ c.client_id }}">{{ c.client_name }}</a>
+            {% if c.issue_codes %}
+            <div class="codes">
+              {% for code in c.issue_codes %}<span class="code">{{ code }}</span>{% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="stat">
+            <div class="v">{{ c.filings }}</div>
+            <div class="l">filings{% if c.latest_period %} · {{ c.latest_period }}{% endif %}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <p style="font-size: 11px; color: var(--fg-faint); margin-top: 6px;">
+        via Senate LDA · self-reported quarterly. Filing-count is filings mentioning this bill, not money spent on it.
+      </p>
     </section>
     {% endif %}
 

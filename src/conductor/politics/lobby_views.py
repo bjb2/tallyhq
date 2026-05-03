@@ -1,0 +1,264 @@
+"""Read-side helpers for LDA / lobbying surfaces.
+
+bill_lobbied events carry: client_id, client_name, registrant_id, registrant_name,
+filing_year, filing_period, amount_share, issue_codes_for_bill, bill_id.
+
+These views aggregate them for the bill detail page, the client profile page,
+and the landing "Most lobbied bills" card.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Optional
+
+from conductor.store import Store
+
+
+@dataclass
+class ClientLobbyOnBill:
+    client_id: str
+    client_name: str
+    filings: int
+    total_amount: float
+    issue_codes: list[str]
+    latest_period: str   # "2026 Q1"
+
+
+@dataclass
+class LobbiedBill:
+    bill_id: str
+    title: str
+    congress: int
+    bill_type: str
+    number: int
+    cosponsor_count: int
+    sponsor_bioguide: Optional[str]
+    filings_count: int
+    distinct_clients: int
+
+
+def top_clients_for_bill(store: Store, bill_id: str, limit: int = 10) -> list[ClientLobbyOnBill]:
+    """For a bill, list top clients lobbying on it, ranked by filing count."""
+    rows = store.conn.execute(
+        f"""
+        SELECT
+          json_extract_string(payload, '$.client_id')   AS client_id,
+          json_extract_string(payload, '$.client_name') AS client_name,
+          COUNT(*)                                      AS filings,
+          SUM(CAST(json_extract_string(payload, '$.amount_share') AS DOUBLE)) AS total_amount,
+          MAX(CAST(json_extract_string(payload, '$.filing_year') AS INTEGER)) AS latest_year,
+          MAX(json_extract_string(payload, '$.filing_period')) AS latest_period
+        FROM events
+        WHERE event_type = 'bill_lobbied'
+          AND json_extract_string(payload, '$.bill_id') = ?
+        GROUP BY client_id, client_name
+        ORDER BY filings DESC, total_amount DESC NULLS LAST
+        LIMIT {int(limit)}
+        """,
+        [bill_id],
+    ).fetchall()
+    out: list[ClientLobbyOnBill] = []
+    for r in rows:
+        if not r[0]:
+            continue
+        # Most common issue codes for this client on this bill
+        ic_rows = store.conn.execute(
+            """
+            SELECT json_extract_string(payload, '$.issue_codes_for_bill')
+            FROM events
+            WHERE event_type = 'bill_lobbied'
+              AND json_extract_string(payload, '$.bill_id') = ?
+              AND json_extract_string(payload, '$.client_id') = ?
+            LIMIT 50
+            """,
+            [bill_id, r[0]],
+        ).fetchall()
+        codes_set: set[str] = set()
+        for (ic,) in ic_rows:
+            try:
+                for code in (json.loads(ic) if ic else []):
+                    codes_set.add(code)
+            except (TypeError, ValueError):
+                pass
+        period_label = ""
+        if r[4] and r[5]:
+            qmap = {
+                "first_quarter": "Q1", "second_quarter": "Q2",
+                "third_quarter": "Q3", "fourth_quarter": "Q4",
+            }
+            period_label = f"{r[4]} {qmap.get(r[5], r[5])}"
+        out.append(ClientLobbyOnBill(
+            client_id=r[0],
+            client_name=r[1] or r[0],
+            filings=int(r[2] or 0),
+            total_amount=float(r[3] or 0),
+            issue_codes=sorted(codes_set)[:6],
+            latest_period=period_label,
+        ))
+    return out
+
+
+def most_lobbied_bills(store: Store, limit: int = 8) -> list[LobbiedBill]:
+    """Bills with the highest count of bill_lobbied filings, joined to bills entity."""
+    rows = store.conn.execute(
+        f"""
+        WITH agg AS (
+          SELECT
+            json_extract_string(payload, '$.bill_id') AS bill_id,
+            COUNT(*) AS filings,
+            COUNT(DISTINCT json_extract_string(payload, '$.client_id')) AS distinct_clients
+          FROM events
+          WHERE event_type = 'bill_lobbied'
+          GROUP BY bill_id
+          ORDER BY filings DESC
+          LIMIT {int(limit) * 4}
+        )
+        SELECT a.bill_id, b.title, b.congress, b.bill_type, b.number,
+               b.cosponsor_count, b.sponsor_bioguide, a.filings, a.distinct_clients
+        FROM agg a
+        LEFT JOIN bills b ON b.bill_id = a.bill_id
+        WHERE b.bill_id IS NOT NULL
+        ORDER BY a.filings DESC
+        LIMIT {int(limit)}
+        """
+    ).fetchall()
+    return [
+        LobbiedBill(
+            bill_id=r[0],
+            title=r[1] or "",
+            congress=int(r[2] or 0),
+            bill_type=r[3] or "",
+            number=int(r[4] or 0),
+            cosponsor_count=int(r[5] or 0),
+            sponsor_bioguide=r[6],
+            filings_count=int(r[7] or 0),
+            distinct_clients=int(r[8] or 0),
+        )
+        for r in rows
+    ]
+
+
+@dataclass
+class ClientProfile:
+    client_id: str
+    name: str
+    total_filings: int
+    distinct_registrants: int
+    distinct_bills: int
+    total_income: float
+    distinct_periods: int
+
+
+def get_client(store: Store, client_id: str) -> Optional[ClientProfile]:
+    row = store.conn.execute(
+        """
+        SELECT
+          ANY_VALUE(client_name) AS name,
+          COUNT(*) AS filings,
+          COUNT(DISTINCT registrant_id) AS registrants,
+          COALESCE(SUM(income), 0) + COALESCE(SUM(expenses), 0) AS total_income,
+          COUNT(DISTINCT (filing_year || ':' || filing_period)) AS periods
+        FROM lda_filings
+        WHERE client_id = ?
+        GROUP BY client_id
+        """,
+        [client_id],
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    bills = store.conn.execute(
+        """
+        SELECT COUNT(DISTINCT json_extract_string(payload, '$.bill_id'))
+        FROM events
+        WHERE event_type = 'bill_lobbied'
+          AND json_extract_string(payload, '$.client_id') = ?
+        """,
+        [client_id],
+    ).fetchone()
+    return ClientProfile(
+        client_id=client_id,
+        name=row[0],
+        total_filings=int(row[1] or 0),
+        distinct_registrants=int(row[2] or 0),
+        distinct_bills=int(bills[0] or 0),
+        total_income=float(row[3] or 0),
+        distinct_periods=int(row[4] or 0),
+    )
+
+
+@dataclass
+class ClientBillRow:
+    bill_id: str
+    title: str
+    congress: int
+    bill_type: str
+    number: int
+    filings: int
+    issue_codes: list[str]
+
+
+def bills_for_client(store: Store, client_id: str, limit: int = 50) -> list[ClientBillRow]:
+    """Bills this client has lobbied on, ranked by filing count."""
+    rows = store.conn.execute(
+        f"""
+        WITH agg AS (
+          SELECT
+            json_extract_string(payload, '$.bill_id') AS bill_id,
+            COUNT(*) AS filings,
+            list(DISTINCT json_extract_string(payload, '$.issue_codes_for_bill')) AS codes_lists
+          FROM events
+          WHERE event_type = 'bill_lobbied'
+            AND json_extract_string(payload, '$.client_id') = ?
+          GROUP BY bill_id
+        )
+        SELECT a.bill_id, b.title, b.congress, b.bill_type, b.number, a.filings, a.codes_lists
+        FROM agg a
+        LEFT JOIN bills b ON b.bill_id = a.bill_id
+        ORDER BY a.filings DESC
+        LIMIT {int(limit)}
+        """,
+        [client_id],
+    ).fetchall()
+    out = []
+    for r in rows:
+        codes_set: set[str] = set()
+        for cl in (r[6] or []):
+            try:
+                for code in (json.loads(cl) if cl else []):
+                    codes_set.add(code)
+            except (TypeError, ValueError):
+                pass
+        out.append(ClientBillRow(
+            bill_id=r[0],
+            title=r[1] or "",
+            congress=int(r[2] or 0) if r[2] else 0,
+            bill_type=r[3] or "",
+            number=int(r[4] or 0) if r[4] else 0,
+            filings=int(r[5] or 0),
+            issue_codes=sorted(codes_set)[:6],
+        ))
+    return out
+
+
+@dataclass
+class ClientRegistrant:
+    registrant_id: str
+    name: str
+    filings: int
+
+
+def registrants_for_client(store: Store, client_id: str, limit: int = 20) -> list[ClientRegistrant]:
+    rows = store.conn.execute(
+        f"""
+        SELECT registrant_id, ANY_VALUE(registrant_name) name, COUNT(*) filings
+        FROM lda_filings
+        WHERE client_id = ?
+        GROUP BY registrant_id
+        ORDER BY filings DESC
+        LIMIT {int(limit)}
+        """,
+        [client_id],
+    ).fetchall()
+    return [ClientRegistrant(registrant_id=r[0], name=r[1] or r[0], filings=int(r[2] or 0))
+            for r in rows]

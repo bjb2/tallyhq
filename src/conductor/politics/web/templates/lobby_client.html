@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }} — Lobbying — TallyHQ{% endblock %}
+{% block og_title %}{{ profile.name }} on TallyHQ{% endblock %}
+{% block og_description %}Lobbying activity for {{ profile.name }}: {{ profile.total_filings }} filings touching {{ profile.distinct_bills }} bills.{% endblock %}
+{% block content %}
+<style>
+  .client-head {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 24px;
+  }
+  .client-head .crumb { color: var(--fg-muted); font-size: 13px; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .client-head h1 { font-size: 28px; margin: 4px 0 8px; line-height: 1.2; max-width: 900px; }
+  .client-meta {
+    display: flex; gap: 24px; flex-wrap: wrap;
+    color: var(--fg-muted); font-size: 14px;
+  }
+  .client-meta strong { color: var(--fg); }
+
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .strip-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .strip-card .lbl { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .strip-card .val { font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--fg); margin-top: 2px; }
+
+  section.block { margin-bottom: 32px; }
+  section.block h2 { font-family: var(--serif); font-size: 20px; margin: 0 0 4px; }
+  section.block .sub { color: var(--fg-muted); font-size: 13px; margin: 0 0 12px; }
+
+  .bill-list, .reg-list {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .bill-list .row, .reg-list .row {
+    display: grid;
+    grid-template-columns: 60px 1fr auto;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-muted);
+    align-items: center;
+  }
+  .bill-list .row:last-child, .reg-list .row:last-child { border-bottom: none; }
+  .bill-list .row:hover, .reg-list .row:hover { background: var(--bg-elev-2); }
+  .bill-list .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-muted);
+    text-align: center;
+  }
+  .bill-list .num strong { display: block; font-size: 11px; color: var(--fg); }
+  .bill-list .title {
+    font-family: var(--serif);
+    font-size: 14px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bill-list .codes { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .bill-list .code {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--fg-muted);
+    background: var(--bg-elev-2);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .bill-list .filings, .reg-list .filings {
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .reg-list .name { font-size: 13px; color: var(--fg); }
+</style>
+
+<div class="client-head">
+  <div class="crumb">Client · LDA</div>
+  <h1>{{ profile.name }}</h1>
+  <div class="client-meta">
+    <span><strong>{{ "{:,}".format(profile.total_filings) }}</strong> filings</span>
+    <span><strong>{{ "{:,}".format(profile.distinct_bills) }}</strong> bills mentioned</span>
+    <span><strong>{{ profile.distinct_registrants }}</strong> registrants</span>
+    <span><strong>{{ profile.distinct_periods }}</strong> quarters</span>
+    {% if profile.total_income %}<span>~<strong>${{ "{:,.0f}".format(profile.total_income) }}</strong> reported</span>{% endif %}
+  </div>
+</div>
+
+<div class="stats-strip">
+  <div class="strip-card"><div class="lbl">Client ID</div><div class="val mono" style="font-size: 14px;">{{ profile.client_id }}</div></div>
+</div>
+
+{% if bills %}
+<section class="block">
+  <h2>Bills lobbied on</h2>
+  <p class="sub">Bills referenced in this client's quarterly filings, ranked by filing count.</p>
+  <div class="bill-list">
+    {% for b in bills %}
+      <div class="row">
+        <div class="num">
+          {% if b.bill_type %}
+            <strong>{{ b.bill_type|upper }}</strong>
+            {{ b.number }}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </div>
+        <div>
+          {% if b.bill_type %}
+            <a href="/bill/{{ b.congress }}/{{ b.bill_type }}/{{ b.number }}" class="title">
+              {{ b.title or b.bill_id }}
+            </a>
+          {% else %}
+            <span class="title muted">{{ b.bill_id }}</span>
+          {% endif %}
+          {% if b.issue_codes %}
+            <div class="codes">
+              {% for code in b.issue_codes %}<span class="code">{{ code }}</span>{% endfor %}
+            </div>
+          {% endif %}
+        </div>
+        <div class="filings">{{ b.filings }}</div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if registrants %}
+<section class="block">
+  <h2>Registrants</h2>
+  <p class="sub">Lobbying firms that filed on behalf of this client.</p>
+  <div class="reg-list">
+    {% for r in registrants %}
+      <div class="row" style="grid-template-columns: 1fr auto;">
+        <span class="name">{{ r.name }}</span>
+        <span class="filings">{{ r.filings }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<p class="muted" style="font-size: 12px; margin-top: 24px;">
+  Source: Senate LDA quarterly filings (LD-2). Bill mentions extracted from free-text "specific issues" descriptions.
+</p>
+{% endblock %}

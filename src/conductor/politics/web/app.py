@@ -15,19 +15,21 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from conductor.aggregations.activity_grid import grid
 from conductor.politics import (
     bill_views, bills as bills_mod, committees_sync as committees_mod,
-    entities, funding as funding_mod, landing as landing_mod, photos as photos_mod,
-    rollcall_views, stats as stats_mod,
+    entities, funding as funding_mod, landing as landing_mod,
+    lobby_views, photos as photos_mod, rollcall_views, stats as stats_mod,
 )
 from conductor.politics.photos import photo_url
 from conductor.politics.render_grid import render_svg
 from conductor.store import Store
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _env() -> Environment:
@@ -257,8 +259,10 @@ def _aggregate_stats(store: Store, bioguide_ids: list[str]) -> dict:
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
-    app = FastAPI(title="Conductor — Politics", docs_url="/docs")
+    app = FastAPI(title="TallyHQ", docs_url="/docs")
     env = _env()
+    if STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     def get_store() -> Store:
         return Store(db_path) if db_path else Store()
@@ -279,6 +283,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             pulse = landing_mod.pulse_stats(store, days=180)
             recent_bills = landing_mod.recent_bills(store, limit=8)
             top_cosponsored = landing_mod.most_cosponsored(store, limit=5)
+            top_lobbied = lobby_views.most_lobbied_bills(store, limit=8)
             most_active = landing_mod.most_active(store, days=180, limit=8)
             most_absent = landing_mod.most_absent(store, days=180, limit=8)
             breakers = landing_mod.biggest_breakers(store, days=180, min_votes=30, limit=8)
@@ -294,6 +299,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             pulse=pulse,
             recent_bills=recent_bills,
             top_cosponsored=top_cosponsored,
+            top_lobbied=top_lobbied,
             most_active=most_active,
             most_absent=most_absent,
             breakers=breakers,
@@ -571,6 +577,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             cosponsors = bill_views.cosponsors(store, bill_id)
             tallies = bill_views.rollcall_tallies(store, bill_id)
             actions = _fetch_bill_actions(store, bill_id)
+            lobby_clients = lobby_views.top_clients_for_bill(store, bill_id, limit=10)
         finally:
             store.close()
         tmpl = env.get_template("bill.html")
@@ -581,6 +588,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             cosponsors=cosponsors,
             tallies=tallies,
             actions=actions,
+            lobby_clients=lobby_clients,
             photo=lambda bg: photo_url(bg, "225x275"),
             big_photo=lambda bg: photo_url(bg, "450x550"),
         )
@@ -616,6 +624,65 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             store.close()
         tmpl = env.get_template("rollcall.html")
         return tmpl.render(d=d, photo=lambda b: photo_url(b, "225x275"))
+
+    @app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+    def robots():
+        return (
+            "User-agent: *\n"
+            "Allow: /\n"
+            "Disallow: /api/\n"
+            "Disallow: /docs\n"
+            "Sitemap: https://tallyhq.org/sitemap.xml\n"
+        )
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    def sitemap():
+        store = get_store()
+        try:
+            members = entities.list_all(store, active_only=True)
+            bills_rows = store.conn.execute(
+                """
+                SELECT bill_id, congress, bill_type, number,
+                       COALESCE(latest_action_date, introduced_date) AS d
+                FROM bills
+                ORDER BY d DESC NULLS LAST
+                LIMIT 5000
+                """
+            ).fetchall()
+        finally:
+            store.close()
+        urls: list[tuple[str, str]] = [
+            ("https://tallyhq.org/", "1.0"),
+            ("https://tallyhq.org/browse", "0.9"),
+            ("https://tallyhq.org/bills", "0.9"),
+        ]
+        for m in members:
+            urls.append((f"https://tallyhq.org/legislator/{m.bioguide_id}", "0.7"))
+        for r in bills_rows:
+            urls.append((
+                f"https://tallyhq.org/bill/{r[1]}/{r[2]}/{r[3]}",
+                "0.5",
+            ))
+        body = ['<?xml version="1.0" encoding="UTF-8"?>']
+        body.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+        for url, prio in urls:
+            body.append(f"<url><loc>{url}</loc><priority>{prio}</priority></url>")
+        body.append("</urlset>")
+        return Response(content="\n".join(body), media_type="application/xml")
+
+    @app.get("/lobby/client/{client_id}", response_class=HTMLResponse)
+    def lobby_client(client_id: str):
+        store = get_store()
+        try:
+            profile = lobby_views.get_client(store, client_id)
+            if profile is None:
+                raise HTTPException(404, f"unknown client: {client_id}")
+            bills = lobby_views.bills_for_client(store, client_id, limit=50)
+            registrants = lobby_views.registrants_for_client(store, client_id, limit=20)
+        finally:
+            store.close()
+        tmpl = env.get_template("lobby_client.html")
+        return tmpl.render(profile=profile, bills=bills, registrants=registrants)
 
     @app.get("/api/search")
     def api_search(q: str = Query("", max_length=80), limit: int = Query(8, ge=1, le=20)):

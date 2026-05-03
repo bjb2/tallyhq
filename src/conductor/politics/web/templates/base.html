@@ -4,6 +4,20 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{% block title %}TallyHQ — observing the US Congress{% endblock %}</title>
+<meta name="description" content="{% block meta_description %}TallyHQ — every roll-call vote, bill, party-line break, and floor speech in the US Congress, attributed to each member as a daily activity feed.{% endblock %}" />
+<link rel="canonical" href="{% block canonical %}https://tallyhq.org{% endblock %}" />
+<meta property="og:site_name" content="TallyHQ" />
+<meta property="og:type" content="{% block og_type %}website{% endblock %}" />
+<meta property="og:title" content="{% block og_title %}TallyHQ — Congress, on the record.{% endblock %}" />
+<meta property="og:description" content="{% block og_description %}A GitHub-style activity tracker for the US Congress. Roll-call votes, bills, floor speeches — attributed to each member.{% endblock %}" />
+<meta property="og:url" content="{% block og_url %}https://tallyhq.org{% endblock %}" />
+<meta property="og:image" content="{% block og_image %}https://tallyhq.org/static/og.png{% endblock %}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{% block twitter_title %}{{ self.og_title() }}{% endblock %}" />
+<meta name="twitter:description" content="{% block twitter_description %}{{ self.og_description() }}{% endblock %}" />
+<meta name="twitter:image" content="{% block twitter_image %}{{ self.og_image() }}{% endblock %}" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">

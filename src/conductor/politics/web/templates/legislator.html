@@ -1,5 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ entity.full_name }} — Conductor{% endblock %}
+{% block title %}{{ entity.full_name }} — TallyHQ{% endblock %}
+{% block og_type %}profile{% endblock %}
+{% block og_title %}{{ entity.full_name }} on TallyHQ{% endblock %}
+{% block og_description %}{{ entity.party }} · {{ entity.chamber|title }} {{ entity.state }}{% if entity.district is not none and entity.district != 0 %}-{{ '%02d'|format(entity.district) }}{% endif %}. {{ stats.total_votes }} votes cast, {{ stats.break_count }} party-line breaks, {{ stats.floor_speeches }} floor speeches.{% endblock %}
+{% block og_url %}https://tallyhq.org/legislator/{{ entity.bioguide_id }}{% endblock %}
 {% block content %}
 <style>
   .profile {

@@ -576,6 +576,25 @@
 
   <div class="col-card">
     <header>
+      <h3>Most lobbied</h3>
+      <span class="lead">filings mentioning this bill</span>
+    </header>
+    <div class="body">
+      {% for b in top_lobbied %}
+        <a class="rank-row" target="_self" href="/bill/{{ b.congress }}/{{ b.bill_type }}/{{ b.number }}" style="grid-template-columns: 28px 1fr auto;">
+          <div class="rk mono">{{ b.bill_type|upper }}</div>
+          <div>
+            <div class="name" style="white-space: normal; line-height: 1.3;">{{ b.title[:90] }}{% if b.title|length > 90 %}…{% endif %}</div>
+            <div class="meta">#{{ b.number }} · {{ b.distinct_clients }} clients</div>
+          </div>
+          <div class="val">{{ "{:,}".format(b.filings_count) }}<span class="sec">filings</span></div>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="col-card">
+    <header>
       <h3>Most cosponsored</h3>
       <span class="lead">in the dataset</span>
     </header>
