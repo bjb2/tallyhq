@@ -4,6 +4,8 @@
 
 Every roll-call vote, every bill introduced, every party-line break, every floor speech — pulled from official sources, attributed to each member, rendered as a daily record of who is doing what on Capitol Hill.
 
+![TallyHQ landing — Congress, on the record.](docs/landing.png)
+
 ## What it shows
 
 - **Per-legislator activity grid** (GitHub-contribution-style 7×N heatmap) over the past year
