@@ -420,6 +420,16 @@ def cmd_politics_daily_update(args, store: Store) -> int:
         from conductor.politics import committees_sync as cs
         ls.sync(store)
         cs.sync(store)
+        # Funding totals — FEC files quarterly, weekly refresh is plenty.
+        # Throttled (~65 req/min) to stay under OpenFEC's 1000/hr cap.
+        # skip_if_present=True so we only fetch (bioguide, cycle) pairs we don't have yet.
+        try:
+            from conductor.politics import funding_sync as fs
+            import asyncio as _asyncio
+            _asyncio.run(fs.sync(store, cycles=(2026, 2024, 2022, 2020)))
+            print("[daily] funding_sync: complete", flush=True)
+        except Exception as e:
+            print(f"[daily] funding_sync: ERROR {e}", file=sys.stderr, flush=True)
 
     daily_adapters = [
         "congress_rollcalls",       # House — fast, no key
