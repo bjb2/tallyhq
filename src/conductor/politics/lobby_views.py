@@ -154,7 +154,7 @@ def get_client(store: Store, client_id: str) -> Optional[ClientProfile]:
     row = store.conn.execute(
         """
         SELECT
-          ANY_VALUE(client_name) AS name,
+          ANY_VALUE(client_name) AS client_disp_name,
           COUNT(*) AS filings,
           COUNT(DISTINCT registrant_id) AS registrants,
           COALESCE(SUM(income), 0) + COALESCE(SUM(expenses), 0) AS total_income,
@@ -251,7 +251,7 @@ class ClientRegistrant:
 def registrants_for_client(store: Store, client_id: str, limit: int = 20) -> list[ClientRegistrant]:
     rows = store.conn.execute(
         f"""
-        SELECT registrant_id, ANY_VALUE(registrant_name) name, COUNT(*) filings
+        SELECT registrant_id, ANY_VALUE(registrant_name) AS reg_name, COUNT(*) AS filings
         FROM lda_filings
         WHERE client_id = ?
         GROUP BY registrant_id
