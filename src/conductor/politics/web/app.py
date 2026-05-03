@@ -606,6 +606,61 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         )
 
     @app.on_event("startup")
+    async def _schedule_daily_update():
+        """In-process daily-update scheduler.
+
+        Set DAILY_UPDATE_HOUR_UTC env var to enable (e.g. "7" = 07:00 UTC).
+        When unset, this loop is a no-op — useful for local dev or when
+        you've split cron into a separate Railway service.
+
+        Spawns the same logic as `conductor politics daily-update` as a
+        subprocess so the DuckDB lock isn't held by the web event loop.
+        """
+        import asyncio
+        import logging as _logging
+        import os as _os
+        from datetime import datetime, time as _time, timedelta, timezone as _tz
+
+        hour_env = _os.environ.get("DAILY_UPDATE_HOUR_UTC", "").strip()
+        if not hour_env:
+            return
+        try:
+            target_hour = int(hour_env)
+        except ValueError:
+            return
+        if not 0 <= target_hour <= 23:
+            return
+
+        _log = _logging.getLogger("conductor.daily")
+        _log.info("daily-update scheduler enabled — fires at %02d:00 UTC", target_hour)
+
+        async def _loop():
+            while True:
+                now = datetime.now(tz=_tz.utc)
+                target = datetime.combine(now.date(), _time(target_hour, 0), tzinfo=_tz.utc)
+                if now >= target:
+                    target = target + timedelta(days=1)
+                wait_s = (target - now).total_seconds()
+                _log.info("next daily-update in %.1fh at %s", wait_s / 3600, target.isoformat())
+                await asyncio.sleep(wait_s)
+                try:
+                    import sys as _sys
+                    db_arg = str(db_path) if db_path else "/data/conductor.duckdb"
+                    proc = await asyncio.create_subprocess_exec(
+                        _sys.executable, "-m", "conductor.cli",
+                        "--db", db_arg, "politics", "daily-update",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                    out, _ = await proc.communicate()
+                    _log.info("daily-update exited %s\n%s", proc.returncode,
+                              (out or b"").decode("utf-8", errors="replace")[:4000])
+                except Exception as e:
+                    _log.error("daily-update spawn failed: %s", e)
+
+        asyncio.create_task(_loop())
+
+    @app.on_event("startup")
     async def _warm_photos():
         # Load DB-persisted cache into memory first (instant), then probe any
         # bioguides not yet cached (background, non-blocking).
