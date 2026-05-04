@@ -504,13 +504,13 @@
         .ver-row .formats a:hover { background: var(--bg-elev-2); color: var(--accent); border-color: var(--accent); text-decoration: none; }
       </style>
       <div class="versions">
-        {% for v in bill.text_versions %}
+        {% for v in text_versions %}
           <div class="ver-row">
-            <span class="when">{{ v.date or '—' }}</span>
+            <span class="when">{{ v.date_label }}</span>
             <span class="type">{{ v.type or 'Unknown' }}</span>
             <div class="formats">
               {% for f in (v.formats or []) %}
-                {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.type }}</a>{% endif %}
+                {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.label or f.type or 'File' }}</a>{% endif %}
               {% endfor %}
             </div>
           </div>

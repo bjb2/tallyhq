@@ -208,11 +208,35 @@ def _format_text_versions(versions: list[dict] | None) -> list[dict]:
         except ValueError:
             return None
 
+    # Map URL extension → format label. BILLSTATUS XML's `type` field is
+    # almost always empty, so we infer from the URL.
+    _EXT_LABEL = {
+        "htm": "HTML", "html": "HTML",
+        "pdf": "PDF",
+        "xml": "XML",
+        "txt": "TXT",
+    }
+
+    def _label_for(fmt: dict) -> str:
+        t = (fmt.get("type") or "").strip()
+        if t:
+            return t
+        url = fmt.get("url") or ""
+        if not url:
+            return ""
+        ext = url.rsplit(".", 1)[-1].lower() if "." in url else ""
+        return _EXT_LABEL.get(ext, ext.upper() or "FILE")
+
     out = []
     for v in versions:
         parsed = _parse(v.get("date"))
+        formats = []
+        for f in (v.get("formats") or []):
+            label = _label_for(f)
+            formats.append({**f, "label": label})
         out.append({
             **v,
+            "formats": formats,
             "_sort": parsed,
             "date_label": parsed.strftime("%b %d, %Y") if parsed else "—",
         })
