@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}{{ bill.bill_id }} — {{ from_label }} → {{ to_label }}{% endblock %}
+{% block content %}
+<style>
+  .dh { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; }
+  .dh .crumb { font-size: 13px; color: var(--fg-muted); margin-bottom: 4px; }
+  .dh .crumb a { color: var(--fg-muted); }
+  .dh h1 { margin: 4px 0 6px; font-size: 24px; }
+  .dh .vs { font-family: var(--mono); font-size: 14px; color: var(--fg); }
+  .dh .vs .arrow { color: var(--fg-muted); padding: 0 8px; }
+  .cl-stats { display: flex; gap: 16px; margin-bottom: 12px; font-family: var(--mono); font-size: 12px; }
+  .cl-stats .add { color: #1a7f37; }
+  .cl-stats .del { color: #b62428; }
+  .cl-stats .ctx { color: var(--fg-muted); }
+  .diff-body {
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px;
+    overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.5;
+  }
+  .diff-body > div { padding: 1px 12px; white-space: pre-wrap; word-break: break-word; }
+  .diff-add { background: #e6f4ea; color: #0b5223; }
+  .diff-del { background: #fceaea; color: #8a1a1e; }
+  .diff-ctx { color: var(--fg); }
+  .diff-hunk, .diff-file { background: var(--bg-elev-2); color: var(--fg-muted); font-weight: 500; }
+  .picker { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .picker select {
+    padding: 6px 10px; font-family: var(--mono); font-size: 12px;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg-elev); color: var(--fg);
+  }
+  .picker button {
+    padding: 6px 14px; font-size: 12px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer;
+  }
+</style>
+<div class="dh">
+  <div class="crumb">
+    <a href="/bill/{{ bill.congress }}/{{ bill.bill_type }}/{{ bill.number }}">
+      ← {{ bill.bill_type|upper }} {{ bill.number }}
+    </a>
+  </div>
+  <h1>Changelog
+    <details class="stage-help">
+      <summary aria-label="What these stages mean">ⓘ</summary>
+      <div class="stage-help-body">
+        <p><strong>How a bill moves through Congress.</strong> Each stage produces a new official text.</p>
+        <ol>
+          <li><code>ih</code>/<code>is</code> — Introduced (House/Senate). First filed.</li>
+          <li><code>rfh</code>/<code>rfs</code> — Referred to committee.</li>
+          <li><code>rh</code>/<code>rs</code> — Reported back by committee (often with amendments).</li>
+          <li><code>pcs</code>/<code>pch</code> — Placed on Calendar for floor vote.</li>
+          <li><code>eh</code>/<code>es</code> — Engrossed. Passed originating chamber.</li>
+          <li><code>rdh</code>/<code>rds</code> — Received by the other chamber.</li>
+          <li><code>eah</code>/<code>eas</code> — Engrossed Amendment. Other chamber passed amended version.</li>
+          <li><code>ath</code>/<code>ats</code> — Agreed to. Both chambers settled on same text.</li>
+          <li><code>enr</code> — Enrolled. Final text sent to President.</li>
+          <li><code>pl</code> — Public Law. Signed.</li>
+          <li><code>pp</code> — Public Print. Official post-enactment printing.</li>
+        </ol>
+      </div>
+    </details>
+  </h1>
+  <style>
+    .stage-help { display: inline-block; margin-left: 8px; vertical-align: middle; position: relative; }
+    .stage-help summary {
+      list-style: none; cursor: pointer; display: inline-flex; align-items: center;
+      justify-content: center; width: 20px; height: 20px; border-radius: 50%;
+      border: 1px solid var(--border); color: var(--fg-muted); font-size: 13px;
+      font-family: var(--mono); user-select: none;
+    }
+    .stage-help summary::-webkit-details-marker { display: none; }
+    .stage-help summary:hover { color: var(--accent); border-color: var(--accent); }
+    .stage-help[open] summary { color: var(--accent); border-color: var(--accent); }
+    .stage-help-body {
+      position: absolute; top: 28px; left: 0; z-index: 10;
+      width: min(560px, 90vw); padding: 16px 18px;
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+      font-size: 13px; line-height: 1.5; color: var(--fg);
+    }
+    .stage-help-body p { margin: 0 0 10px; }
+    .stage-help-body ol { margin: 0; padding-left: 20px; }
+    .stage-help-body ol li { margin-bottom: 4px; }
+    .stage-help-body code {
+      font-family: var(--mono); font-size: 11px; padding: 1px 4px;
+      background: var(--bg-elev-2); border-radius: 3px;
+    }
+  </style>
+  <div class="vs">
+    {{ from_label }} <span class="arrow">→</span> {{ to_label }}
+  </div>
+  {% if changelog and changelog.versions|length >= 2 %}
+  <div class="picker">
+    <label style="font-size:12px;color:var(--fg-muted);">Compare</label>
+    <select id="from">
+      {% for v in changelog.versions %}
+        <option value="{{ v.code }}" {% if v.code == from_code %}selected{% endif %}>{{ v.label }} ({{ v.code }})</option>
+      {% endfor %}
+    </select>
+    <span style="color:var(--fg-muted);">→</span>
+    <select id="to">
+      {% for v in changelog.versions %}
+        <option value="{{ v.code }}" {% if v.code == to_code %}selected{% endif %}>{{ v.label }} ({{ v.code }})</option>
+      {% endfor %}
+    </select>
+    <button onclick="go()">View diff</button>
+  </div>
+  <script>
+    function go() {
+      const f = document.getElementById('from').value;
+      const t = document.getElementById('to').value;
+      if (f === t) return;
+      window.location.href =
+        '/bill/{{ bill.congress }}/{{ bill.bill_type }}/{{ bill.number }}/changelog/' + f + '/' + t;
+    }
+  </script>
+  {% endif %}
+</div>
+
+<div class="cl-stats">
+  <span class="add">+{{ added }}</span>
+  <span class="del">−{{ removed }}</span>
+  <span class="ctx">{{ unchanged }} unchanged</span>
+</div>
+
+<style>
+  .ai-summary {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 6px;
+    padding: 14px 18px; margin-bottom: 16px;
+  }
+  .ai-summary-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .ai-tag { font-family: var(--mono); font-size: 10px; background: var(--accent);
+    color: #fff; padding: 2px 8px; border-radius: 999px;
+    letter-spacing: 0.06em; text-transform: uppercase; }
+  .ai-meta { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }
+  .ai-summary-body { font-size: 14px; line-height: 1.6; }
+  .ai-summary-body p { margin: 0 0 10px; }
+  .ai-summary-body p:last-child { margin-bottom: 0; }
+  .ai-disclaimer { font-size: 11px; color: var(--fg-muted); margin: 10px 0 0; }
+</style>
+
+{% if ai_summary %}
+  {% include "_ai_summary_card.html" %}
+{% endif %}
+
+{{ diff_html|safe }}
+{% endblock %}

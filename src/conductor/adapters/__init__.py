@@ -6,6 +6,8 @@ from conductor.adapters import (
     congress_bill_actions,
     congress_amendments,
     congress_committee_meetings,
+    congress_bill_summaries,
+    govinfo_bill_text,
     govinfo_crec,
     lda_senate,
 )

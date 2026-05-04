@@ -37,6 +37,11 @@ def render_ansi(row: GridRow) -> str:
     return "\n".join("".join(r) for r in rows)
 
 
+RECESS_BG = "#dfd9c8"   # muted cream, distinguishable from empty white but not loud
+HOUSE_COLOR = "#cd6f4f"
+SENATE_COLOR = "#5588a3"
+
+
 def render_svg(
     row: GridRow,
     *,
@@ -47,15 +52,26 @@ def render_svg(
     label_months: bool = True,
     text_color: str = "#5e5a52",
     interactive: bool = False,
+    session_mask: dict | None = None,
+    session_mode: str = "none",     # "none" | "recess-bg" | "stripe"
 ) -> str:
     """SVG contribution graph. Light palette by default.
 
     When ``interactive`` is True, cells with band > 0 carry ``class="day-cell"``
     and ``cursor:pointer`` so a JS handler bound on the SVG host can drill
     into the day's contributing events via ``data-day``.
+
+    Session marker modes:
+    - "none"       (default): no session info rendered.
+    - "recess-bg" : days where BOTH chambers are in recess get a muted bg
+                    on otherwise-empty cells. Active days unchanged.
+    - "stripe"    : two thin rows under the grid showing House (top) and
+                    Senate (bottom) in-session days as colored bars.
+                    Heatmap cells unchanged.
     """
     palette = palette or PALETTE_LIGHT
     cells_by_day = {c.day: c for c in row.cells}
+    mask = session_mask or {}
 
     start = row.start - timedelta(days=(row.start.weekday() + 1) % 7)
     end = row.end + timedelta(days=(5 - row.end.weekday()) % 7)
@@ -64,8 +80,12 @@ def render_svg(
     pitch = cell_size + cell_gap
     margin_left = 28 if label_dow else 4
     margin_top = 18 if label_months else 4
+    stripe_height = 0
+    if session_mode == "stripe":
+        # 2 mini-rows × 4px tall + 2px gap
+        stripe_height = 12
     width = margin_left + weeks * pitch + 4
-    height = margin_top + 7 * pitch + 4
+    height = margin_top + 7 * pitch + 4 + stripe_height
 
     parts: list[str] = []
     parts.append(
@@ -100,7 +120,15 @@ def render_svg(
                 continue
             cell = cells_by_day.get(d)
             band = cell.band if cell else 0
+
+            # Recess-bg mode: empty cells on full-recess days get muted bg
             color = palette[band]
+            if session_mode == "recess-bg" and band == 0:
+                house_in, senate_in = mask.get(d, (False, False))
+                if not house_in and not senate_in and d.weekday() not in (5, 6):
+                    # Only mark weekday recess days; weekends already read as quiet
+                    color = RECESS_BG
+
             tip = (
                 f"{d.isoformat()} · intensity {cell.intensity:.1f} · {cell.count} events"
                 if cell else d.isoformat()
@@ -114,6 +142,33 @@ def render_svg(
                 f'<title>{tip}</title></rect>'
             )
         cur += timedelta(days=7)
+
+    if session_mode == "stripe":
+        # Aggregate per-week: was any of that week in session for each chamber?
+        stripe_y0 = margin_top + 7 * pitch + 4
+        cur = start
+        for col in range(weeks):
+            x = margin_left + col * pitch
+            week_h = False
+            week_s = False
+            for dow in range(7):
+                d = cur + timedelta(days=dow)
+                if d < row.start or d > row.end:
+                    continue
+                h, s = mask.get(d, (False, False))
+                week_h = week_h or h
+                week_s = week_s or s
+            if week_h:
+                parts.append(
+                    f'<rect x="{x}" y="{stripe_y0}" width="{cell_size}" '
+                    f'height="3" rx="1" ry="1" fill="{HOUSE_COLOR}"><title>House in session this week</title></rect>'
+                )
+            if week_s:
+                parts.append(
+                    f'<rect x="{x}" y="{stripe_y0 + 5}" width="{cell_size}" '
+                    f'height="3" rx="1" ry="1" fill="{SENATE_COLOR}"><title>Senate in session this week</title></rect>'
+                )
+            cur += timedelta(days=7)
 
     parts.append("</svg>")
     return "".join(parts)

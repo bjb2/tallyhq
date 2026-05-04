@@ -20,7 +20,9 @@ from fastapi.staticfiles import StaticFiles
 
 from conductor.aggregations.activity_grid import grid
 from conductor.politics import (
-    bill_views, bills as bills_mod, committees_sync as committees_mod,
+    bill_summary as bill_summary_mod,
+    bill_text as bill_text_mod, bill_views, bills as bills_mod,
+    committees_sync as committees_mod,
     entities, funding as funding_mod, landing as landing_mod,
     lobby_views, photos as photos_mod, rollcall_views, stats as stats_mod,
 )
@@ -53,7 +55,25 @@ def _env() -> Environment:
         if not parsed:
             return None
         return f"/bill/{congress}/{parsed[0]}/{parsed[1]}"
+    def _basic_md(text: str) -> str:
+        """Tiny markdown renderer for AI summaries. Handles paragraphs,
+        **bold**, *italic*, and `code`. Escapes other HTML."""
+        import html as _html
+        import re as _re
+        if not text:
+            return ""
+        # Escape HTML first
+        s = _html.escape(text)
+        # Bold/italic/code (after escape so input HTML can't sneak through)
+        s = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+        s = _re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", s)
+        s = _re.sub(r"`(.+?)`", r"<code>\1</code>", s)
+        # Paragraphs by double newline; preserve single newlines as <br>
+        paras = [p.strip() for p in s.split("\n\n") if p.strip()]
+        return "\n".join(f"<p>{p.replace(chr(10), '<br>')}</p>" for p in paras)
+
     env.filters["from_json"] = _from_json
+    env.filters["basic_md"] = _basic_md
     env.globals["bill_path"] = _bill_path
     env.globals["stage_for_action"] = _stage_for_action
     return env
@@ -102,6 +122,71 @@ def _fetch_bill_actions(store: Store, bill_id: str) -> list[dict]:
                 if c not in existing["committees"]:
                     existing["committees"].append(c)
     return [grouped[k] for k in order]
+
+
+def _is_passed(store: Store, bill_id: str) -> bool:
+    """Bill has reached enrolled/law (text version), or latest_action says it
+    became law / was signed. Used to gate AI summary auto-generation.
+    """
+    try:
+        row = store.conn.execute(
+            """
+            SELECT 1
+            FROM bill_text
+            WHERE bill_id = ? AND version_code IN ('enr', 'pl')
+            LIMIT 1
+            """,
+            [bill_id],
+        ).fetchone()
+        if row:
+            return True
+    except Exception:
+        pass
+    row = store.conn.execute(
+        """
+        SELECT 1 FROM bills
+        WHERE bill_id = ?
+          AND (LOWER(latest_action_text) LIKE '%became public law%'
+               OR LOWER(latest_action_text) LIKE '%signed by president%')
+        LIMIT 1
+        """,
+        [bill_id],
+    ).fetchone()
+    return bool(row)
+
+
+def _fetch_crs_summaries(store: Store, bill_id: str) -> list[dict]:
+    """Pull CRS summaries for a bill, newest first per version_code.
+
+    Schema is created by the congress_bill_summaries adapter; if it hasn't
+    run yet the table won't exist — handle gracefully.
+    """
+    try:
+        rows = store.conn.execute(
+            """
+            SELECT version_code, action_desc, action_date, summary_text, update_date
+            FROM bill_summaries
+            WHERE bill_id = ?
+            ORDER BY action_date DESC, update_date DESC
+            """,
+            [bill_id],
+        ).fetchall()
+    except Exception:
+        return []
+    seen: set[str] = set()
+    out: list[dict] = []
+    for code, desc, action_date, text, _ in rows:
+        # One per version_code — newest action_date wins
+        if code in seen:
+            continue
+        seen.add(code)
+        out.append({
+            "version_code": code,
+            "action_desc": desc or "",
+            "action_date": action_date,
+            "summary_text": text or "",
+        })
+    return out
 
 
 def _format_text_versions(versions: list[dict] | None) -> list[dict]:
@@ -483,6 +568,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         bioguide: str,
         days: int = Query(365, ge=7, le=730),
         tab: str = Query("overview", pattern="^(overview|votes|bills|speeches)$"),
+        session_compare: int = Query(0, ge=0, le=1),
     ):
         store = get_store()
         try:
@@ -493,6 +579,17 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             start = end - timedelta(days=days)
             row = grid(store, ent.entity_id, start, end)
             svg = render_svg(row, interactive=True)
+            session_compare_svgs = None
+            if session_compare:
+                from conductor.politics.session_calendar import session_mask
+                mask = session_mask(start, end)
+                session_compare_svgs = {
+                    "baseline": render_svg(row, interactive=True),
+                    "recess_bg": render_svg(row, interactive=True,
+                                            session_mask=mask, session_mode="recess-bg"),
+                    "stripe": render_svg(row, interactive=True,
+                                         session_mask=mask, session_mode="stripe"),
+                }
             stats = stats_mod.compute(store, ent.entity_id)
             committees = committees_mod.member_committees(store, ent.bioguide_id)
             funding_rows = funding_mod.for_member(store, ent.bioguide_id)
@@ -528,6 +625,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             days=days,
             tab=tab,
             photo=photo_url(ent.bioguide_id, "450x550"),
+            session_compare_svgs=session_compare_svgs,
         )
 
     @app.get("/legislator/{bioguide}.svg")
@@ -658,6 +756,84 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             photo=lambda b: photo_url(b, "225x275"),
         )
 
+    @app.post(
+        "/bill/{congress}/{bill_type}/{number}/changelog/{from_code}/{to_code}/summary",
+        response_class=HTMLResponse,
+    )
+    def bill_summary_generate(congress: int, bill_type: str, number: int,
+                              from_code: str, to_code: str):
+        """Generate (or return cached) AI summary for one diff. Only allowed
+        for bills that have passed both chambers (enrolled or law). Returns
+        rendered card HTML.
+        """
+        bill_id = f"{congress}:{bill_type}:{number}"
+        store = get_store()
+        try:
+            if not _is_passed(store, bill_id):
+                raise HTTPException(403, "AI summaries only available for passed bills")
+            from_body = bill_text_mod.get_body_db(store, bill_id, from_code) or ""
+            to_body = bill_text_mod.get_body_db(store, bill_id, to_code) or ""
+            if not (from_body and to_body):
+                raise HTTPException(404, f"text not available for {from_code}/{to_code}")
+            from_label = bill_text_mod.STAGE_LABELS.get(from_code, from_code)
+            to_label = bill_text_mod.STAGE_LABELS.get(to_code, to_code)
+            res = bill_summary_mod.summarize_delta(
+                store, bill_id, from_code, to_code,
+                from_label, to_label, from_body, to_body,
+            )
+            if res is None:
+                raise HTTPException(503, "AI summarizer unavailable (OPENROUTER_API_KEY not set)")
+            sha_pair = bill_summary_mod.sha256_pair(from_body, to_body)
+            cached = bill_summary_mod.get_cached(
+                store, bill_id, from_code, to_code, sha_pair,
+            )
+        finally:
+            store.close()
+        tmpl = env.get_template("_ai_summary_card.html")
+        return tmpl.render(ai_summary=cached)
+
+    @app.get(
+        "/bill/{congress}/{bill_type}/{number}/changelog/{from_code}/{to_code}",
+        response_class=HTMLResponse,
+    )
+    def bill_changelog_diff(congress: int, bill_type: str, number: int,
+                            from_code: str, to_code: str):
+        """Render a single from→to diff as a partial page (full HTML w/ chrome)."""
+        bill_id = f"{congress}:{bill_type}:{number}"
+        store = get_store()
+        try:
+            b = bills_mod.get(store, bill_id)
+            if b is None:
+                raise HTTPException(404, f"unknown bill {bill_id}")
+            res = bill_text_mod.load_diff(store, bill_id, from_code, to_code)
+            changelog = bill_text_mod.changelog_for_bill(store, bill_id)
+            # AI summary lookup (cache only — never trigger generation from a
+            # web request to avoid surprise LLM bills under traffic).
+            from_body = bill_text_mod.get_body_db(store, bill_id, from_code) or ""
+            to_body = bill_text_mod.get_body_db(store, bill_id, to_code) or ""
+            sha_pair = bill_summary_mod.sha256_pair(from_body, to_body)
+            cached_summary = bill_summary_mod.get_cached(
+                store, bill_id, from_code, to_code, sha_pair,
+            )
+            is_passed = _is_passed(store, bill_id)
+        finally:
+            store.close()
+        if res is None:
+            raise HTTPException(404, f"text not available for {from_code} or {to_code}")
+        diff_html, stats = res
+        tmpl = env.get_template("bill_diff.html")
+        return tmpl.render(
+            bill=b,
+            from_code=from_code, to_code=to_code,
+            from_label=bill_text_mod.STAGE_LABELS.get(from_code, from_code),
+            to_label=bill_text_mod.STAGE_LABELS.get(to_code, to_code),
+            diff_html=diff_html,
+            added=stats.added, removed=stats.removed, unchanged=stats.unchanged,
+            changelog=changelog,
+            ai_summary=cached_summary,
+            is_passed=is_passed,
+        )
+
     @app.get("/bill/{congress}/{bill_type}/{number}", response_class=HTMLResponse)
     def bill_detail(congress: int, bill_type: str, number: int):
         bill_id = f"{congress}:{bill_type}:{number}"
@@ -707,6 +883,31 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             actions = _fetch_bill_actions(store, bill_id)
             lobby_clients = lobby_views.top_clients_for_bill(store, bill_id, limit=10)
             text_versions = _format_text_versions(b.text_versions)
+            crs_summaries = _fetch_crs_summaries(store, bill_id)
+            changelog = bill_text_mod.changelog_for_bill(store, bill_id)
+            default_diff_html = None
+            default_diff_stats = None
+            default_ai_summary = None
+            if changelog["default_from"] and changelog["default_to"] \
+                    and changelog["default_from"] != changelog["default_to"]:
+                res = bill_text_mod.load_diff(
+                    store, bill_id,
+                    changelog["default_from"], changelog["default_to"],
+                )
+                if res is not None:
+                    default_diff_html, default_diff_stats = res
+                # cache-only summary lookup
+                from_body = bill_text_mod.get_body_db(
+                    store, bill_id, changelog["default_from"]) or ""
+                to_body = bill_text_mod.get_body_db(
+                    store, bill_id, changelog["default_to"]) or ""
+                sha_pair = bill_summary_mod.sha256_pair(from_body, to_body)
+                default_ai_summary = bill_summary_mod.get_cached(
+                    store, bill_id,
+                    changelog["default_from"], changelog["default_to"],
+                    sha_pair,
+                )
+            is_passed = _is_passed(store, bill_id)
         finally:
             store.close()
         tmpl = env.get_template("bill.html")
@@ -719,6 +920,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             tallies=tallies,
             actions=actions,
             lobby_clients=lobby_clients,
+            crs_summaries=crs_summaries,
+            changelog=changelog,
+            default_diff_html=default_diff_html,
+            default_diff_stats=default_diff_stats,
+            default_ai_summary=default_ai_summary,
+            is_passed=is_passed,
             photo=lambda bg: photo_url(bg, "225x275"),
             big_photo=lambda bg: photo_url(bg, "450x550"),
         )

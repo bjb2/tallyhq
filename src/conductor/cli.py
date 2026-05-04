@@ -568,6 +568,83 @@ def cmd_politics_sync_funding(args, store: Store) -> int:
     return 0
 
 
+def cmd_politics_ingest_bill_text(args, store: Store) -> int:
+    from conductor.politics import bill_text as bill_text_mod
+    root = args.root or bill_text_mod.DEFAULT_TEXT_ROOT
+    inserted, skipped = bill_text_mod.ingest_from_fs(store, root, replace=args.replace)
+    print(f"ingest-bill-text: inserted={inserted} skipped={skipped} root={root}")
+    return 0
+
+
+def cmd_politics_summarize_passed(args, store: Store) -> int:
+    """Generate AI delta summaries for bills that became law (or were enrolled).
+
+    Use --dry-run to print the cost estimate without making any LLM calls.
+    """
+    from conductor.politics import bill_summary as bs_mod
+    from conductor.politics import bill_text as bt_mod
+
+    bs_mod.ensure_schema(store)
+    plan = bs_mod.find_passed_bills(store)
+    if args.bill_id:
+        plan = [p for p in plan if p["bill_id"] == args.bill_id]
+    if args.limit:
+        plan = plan[: args.limit]
+    summary = bs_mod.estimate_batch_cost(plan)
+    print(f"plan: {summary['count']} bills (punt={summary['count_punt']}), "
+          f"estimated total ${summary['total_usd']:.2f}")
+    for tier, usd in sorted(summary["by_tier"].items()):
+        print(f"  tier {tier}: ${usd:.2f}")
+    for model, usd in sorted(summary["by_model"].items()):
+        print(f"  model {model}: ${usd:.2f}")
+
+    if args.dry_run:
+        for p in plan[:20]:
+            print(f"  {p['bill_id']}  {p['from_code']}→{p['to_code']}  "
+                  f"{p['combined_tokens']//1000}k tok  {p['tier']}  ${p['est_usd']:.4f}")
+        if len(plan) > 20:
+            print(f"  ... +{len(plan) - 20} more")
+        return 0
+
+    # Generate
+    actual_total = 0.0
+    for i, p in enumerate(plan, 1):
+        bill_id = p["bill_id"]
+        from_code, to_code = p["from_code"], p["to_code"]
+        from_body = bt_mod.get_body_db(store, bill_id, from_code) or ""
+        to_body = bt_mod.get_body_db(store, bill_id, to_code) or ""
+        if not (from_body and to_body):
+            print(f"  skip {bill_id}: missing body")
+            continue
+        from_label = bt_mod.STAGE_LABELS.get(from_code, from_code)
+        to_label = bt_mod.STAGE_LABELS.get(to_code, to_code)
+        print(f"[{i}/{len(plan)}] {bill_id} {from_code}→{to_code} "
+              f"({p['tier']}, est ${p['est_usd']:.4f})... ", end="", flush=True)
+        try:
+            res = bs_mod.summarize_delta(
+                store, bill_id, from_code, to_code,
+                from_label, to_label, from_body, to_body,
+                force=args.force,
+            )
+        except Exception as e:
+            print(f"ERR: {e}")
+            continue
+        if res is None:
+            print("skipped (no API key)")
+            continue
+        # actual cost = (in_tokens * in_rate + out_tokens * out_rate) / 1M
+        in_rate, out_rate = bs_mod._PRICING.get(
+            bs_mod.HAIKU_MODEL if "haiku" in (res.tier or "") else bs_mod.SONNET_MODEL,
+            (3.0, 15.0),
+        )
+        # better: lookup by model in cache row — quick approximation here
+        actual = (res.input_tokens * in_rate + res.output_tokens * out_rate) / 1_000_000
+        actual_total += actual
+        print(f"OK ({res.input_tokens} in, {res.output_tokens} out, ~${actual:.4f})")
+    print(f"DONE — actual total ~${actual_total:.2f}")
+    return 0
+
+
 def cmd_politics_web(args, store: Store) -> int:
     import uvicorn
     from conductor.politics.web.app import create_app
@@ -699,6 +776,30 @@ def build_parser() -> argparse.ArgumentParser:
                        help="comma-list of election cycles (year=even). default: 2026,2024")
     pp_sf.set_defaults(func=cmd_politics_sync_funding)
 
+    pp_sum = psub.add_parser(
+        "summarize-passed",
+        help="generate AI delta summaries for bills that became law (or were enrolled)",
+    )
+    pp_sum.add_argument("--dry-run", action="store_true",
+                        help="print cost estimate without making LLM calls")
+    pp_sum.add_argument("--limit", type=int, default=None,
+                        help="cap to first N bills")
+    pp_sum.add_argument("--bill-id", default=None,
+                        help='only this bill (e.g. "119:hr:1968")')
+    pp_sum.add_argument("--force", action="store_true",
+                        help="regenerate even if cached")
+    pp_sum.set_defaults(func=cmd_politics_summarize_passed)
+
+    pp_ibt = psub.add_parser(
+        "ingest-bill-text",
+        help="load bill text from data/bill_text/ filesystem tree into the bill_text DB table",
+    )
+    pp_ibt.add_argument("--root", type=Path, default=None,
+                        help="override text root (default: $TALLYHQ_TEXT_ROOT or data/bill_text)")
+    pp_ibt.add_argument("--replace", action="store_true",
+                        help="replace existing rows even if sha256 matches")
+    pp_ibt.set_defaults(func=cmd_politics_ingest_bill_text)
+
     pp_sc = psub.add_parser(
         "sync-committees",
         help="sync committee assignments for every legislator",
@@ -731,11 +832,29 @@ def main(argv: list[str] | None = None) -> int:
     # httpx logs full request URLs at INFO; suppress to avoid leaking
     # api_key query params (api.congress.gov) into logs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    store = Store(db_path=args.db)
+    db_path = _resolve_db_path(args)
+    store = Store(db_path=db_path)
     try:
         return args.func(args, store)
     finally:
         store.close()
+
+
+def _resolve_db_path(args) -> Path:
+    """Return the DB path to open. For pull commands targeting an adapter that
+    declares `requires_db = False`, return an in-memory DuckDB path so we
+    never contend for the real file lock.
+    """
+    requested = getattr(args, "db", None) or Path("data/conductor.duckdb")
+    func = getattr(args, "func", None)
+    if func is cmd_pull:
+        try:
+            cls = registry.get(args.adapter)
+        except KeyError:
+            return requested
+        if not getattr(cls, "requires_db", True):
+            return Path(":memory:")
+    return requested
 
 
 if __name__ == "__main__":

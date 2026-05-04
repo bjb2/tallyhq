@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TallyHQ — Session-marker heatmap mocks (A & B)</title>
+<style>
+  :root {
+    --bg: #faf6ee;
+    --fg: #1f1f1f;
+    --fg-muted: #7a7263;
+    --border: #e0d8c5;
+    --bg-elev: #f5efde;
+    --bg-elev-2: #e8e1cf;
+    --recess: #ece5d2;
+    --tile-empty: #f3eede;
+    --tile-empty-recess: #e2d9c1;
+    --tile-low: #c9d8a7;
+    --tile-mid: #88b057;
+    --tile-high: #4d7a26;
+    --house: #cd6f4f;
+    --senate: #5588a3;
+    --accent: #4d7a26;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Inter', system-ui, sans-serif;
+    margin: 0; padding: 32px 40px;
+    line-height: 1.4;
+  }
+  h1 { font-family: 'Source Serif Pro', Georgia, serif; font-weight: 600; margin: 0 0 8px; }
+  h2 { font-family: 'Source Serif Pro', Georgia, serif; font-weight: 600; margin: 32px 0 4px; font-size: 22px; }
+  p.sub { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; max-width: 720px; }
+  .wrap { max-width: 1200px; }
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px 28px;
+    margin-bottom: 32px;
+  }
+  .card h3 {
+    font-family: 'Source Serif Pro', Georgia, serif;
+    font-weight: 600;
+    font-size: 17px;
+    margin: 0 0 4px;
+  }
+  .card .desc { color: var(--fg-muted); font-size: 12px; margin: 0 0 18px; }
+
+  /* Heatmap layout */
+  .heatmap-row { display: flex; gap: 4px; align-items: flex-start; }
+  .day-labels {
+    display: flex; flex-direction: column;
+    gap: 2px; font-size: 9px; color: var(--fg-muted);
+    margin-right: 4px; padding-top: 16px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .day-labels span { height: 12px; line-height: 12px; }
+  .grid-area { flex: 1; min-width: 0; }
+  .month-strip {
+    display: grid;
+    grid-template-columns: repeat(52, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+    font-size: 9px; color: var(--fg-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .month-strip span { white-space: nowrap; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(52, 1fr);
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 12px);
+    gap: 2px;
+  }
+  .tile { width: 100%; height: 12px; border-radius: 2px; background: var(--tile-empty); }
+  .tile.l1 { background: var(--tile-low); }
+  .tile.l2 { background: var(--tile-mid); }
+  .tile.l3 { background: var(--tile-high); }
+
+  /* Option A: muted bg on recess empty tiles */
+  .grid.opt-a .tile.recess { background: var(--tile-empty-recess); }
+  /* recess tiles with activity stay normal — no override; activity color reads through */
+  .grid.opt-a .tile.recess.l1 { background: var(--tile-low); }
+  .grid.opt-a .tile.recess.l2 { background: var(--tile-mid); }
+  .grid.opt-a .tile.recess.l3 { background: var(--tile-high); }
+
+  /* Option B: stripe under grid */
+  .stripe {
+    margin-top: 6px;
+    display: grid;
+    grid-template-columns: repeat(52, 1fr);
+    gap: 2px;
+  }
+  .stripe-cell { display: flex; flex-direction: column; gap: 1px; }
+  .stripe-bar { height: 3px; border-radius: 1px; background: transparent; }
+  .stripe-bar.in-house { background: var(--house); }
+  .stripe-bar.in-senate { background: var(--senate); }
+
+  .legend {
+    display: flex; gap: 16px; font-size: 11px;
+    color: var(--fg-muted); margin-top: 14px;
+    align-items: center; flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 14px; height: 12px; border-radius: 2px; border: 1px solid var(--border); }
+  .swatch.empty { background: var(--tile-empty); }
+  .swatch.empty-recess { background: var(--tile-empty-recess); }
+  .swatch.l1 { background: var(--tile-low); }
+  .swatch.l2 { background: var(--tile-mid); }
+  .swatch.l3 { background: var(--tile-high); }
+  .swatch.house { background: var(--house); }
+  .swatch.senate { background: var(--senate); }
+
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  @media (max-width: 1000px) { .compare { grid-template-columns: 1fr; } }
+
+  .baseline {
+    background: var(--bg-elev);
+    border: 1px dashed var(--border);
+    padding: 16px 20px; border-radius: 6px;
+    font-size: 12px; color: var(--fg-muted);
+    margin-bottom: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Session-marker heatmap mocks</h1>
+  <p class="sub">Two ways to surface "Congress in session vs recess" on a per-legislator activity heatmap, without overpowering the activity signal.</p>
+
+  <div class="baseline">
+    Synthetic data: 52 weeks of activity (light/medium/heavy days), with House &amp; Senate session schedules roughly mirroring real 119/1 calendar (in-session Tue–Thu most weeks, recess Aug + late Dec, plus state-work-period blocks).
+  </div>
+
+  <div class="card">
+    <h3>Baseline (current)</h3>
+    <p class="desc">No session indication. Recess days look identical to in-session quiet days.</p>
+    <div class="heatmap-row">
+      <div class="day-labels"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="grid-area">
+        <div class="month-strip" id="months-base"></div>
+        <div class="grid" id="grid-base"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="legend-item"><span class="swatch empty"></span>none</span>
+      <span class="legend-item"><span class="swatch l1"></span>light</span>
+      <span class="legend-item"><span class="swatch l2"></span>med</span>
+      <span class="legend-item"><span class="swatch l3"></span>heavy</span>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="card">
+      <h3>Option A — muted bg on recess empty tiles</h3>
+      <p class="desc">Empty squares get a darker cream when both chambers were in recess that day. Active days unchanged. Subtlest possible — easy to miss.</p>
+      <div class="heatmap-row">
+        <div class="day-labels"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+        <div class="grid-area">
+          <div class="month-strip" id="months-a"></div>
+          <div class="grid opt-a" id="grid-a"></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span class="legend-item"><span class="swatch empty"></span>in session, no activity</span>
+        <span class="legend-item"><span class="swatch empty-recess"></span>recess</span>
+        <span class="legend-item"><span class="swatch l1"></span>light</span>
+        <span class="legend-item"><span class="swatch l2"></span>med</span>
+        <span class="legend-item"><span class="swatch l3"></span>heavy</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Option B — stripe under grid (House + Senate)</h3>
+      <p class="desc">Two thin rows under the heatmap: top = House, bottom = Senate. Colored bar where in session, transparent where recess. Heatmap untouched — context lives below.</p>
+      <div class="heatmap-row">
+        <div class="day-labels"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span style="height:6px"></span><span style="height:4px;color:transparent">·</span><span style="height:4px;color:transparent">·</span></div>
+        <div class="grid-area">
+          <div class="month-strip" id="months-b"></div>
+          <div class="grid" id="grid-b"></div>
+          <div class="stripe" id="stripe-b"></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span class="legend-item"><span class="swatch house"></span>House in session</span>
+        <span class="legend-item"><span class="swatch senate"></span>Senate in session</span>
+        <span class="legend-item"><span class="swatch l1"></span>light</span>
+        <span class="legend-item"><span class="swatch l2"></span>med</span>
+        <span class="legend-item"><span class="swatch l3"></span>heavy</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="sub" style="font-size: 11px; margin-top: 24px;">
+    Notes — A is so subtle it functions almost as a "fade weekends + recess together" treatment; might confuse users who don't know to look. B adds 8px of vertical real estate but the chambers signal is unambiguous and you can hover for date detail. C (diagonal hatch overlay) skipped — adds texture noise.
+  </p>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Synthetic data
+// ---------------------------------------------------------------------------
+const WEEKS = 52;
+const DAYS = WEEKS * 7;
+
+// Build a 52-week × 7-day matrix of fake activity intensity
+function genActivity() {
+  const out = [];
+  for (let w = 0; w < WEEKS; w++) {
+    for (let d = 0; d < 7; d++) {
+      const isWeekend = (d === 0 || d === 6);
+      // Activity heavily concentrated Tue-Thu of in-session weeks
+      const inSessionWeek = sessionWeekIntensity(w);
+      const baseLambda = inSessionWeek * (d === 0 ? 0.05 : d === 6 ? 0.03 :
+                                          d === 1 ? 0.15 : d === 5 ? 0.2 :
+                                          0.55);
+      const r = Math.random();
+      let level = 0;
+      if (r < baseLambda * 0.1) level = 3;
+      else if (r < baseLambda * 0.35) level = 2;
+      else if (r < baseLambda * 0.7) level = 1;
+      out.push(level);
+    }
+  }
+  return out;
+}
+
+// Returns 0-1 intensity scale for the week — recess weeks → 0
+function sessionWeekIntensity(w) {
+  // August recess: weeks 31-35
+  if (w >= 31 && w <= 35) return 0;
+  // Late Dec: weeks 50-51
+  if (w >= 50) return 0.1;
+  // State work periods (rough): weeks 8, 14, 19, 27, 41, 46
+  if ([8, 14, 19, 27, 41, 46].includes(w)) return 0.2;
+  // Otherwise active
+  return 1;
+}
+
+// House in-session days (boolean per day index)
+function houseSession(idx) {
+  const w = Math.floor(idx / 7);
+  const d = idx % 7;
+  // House typically Tue-Thu when in session
+  if (d === 0 || d === 6) return false;
+  if (sessionWeekIntensity(w) === 0) return false;
+  if (sessionWeekIntensity(w) < 0.3) return false;
+  // Mon and Fri half the time when in regular session
+  if (d === 1) return Math.random() < 0.4;  // some Mondays
+  if (d === 5) return Math.random() < 0.3;  // some Fridays
+  return true;
+}
+// Senate similar but slightly more in-session days (longer weeks)
+function senateSession(idx) {
+  const w = Math.floor(idx / 7);
+  const d = idx % 7;
+  if (d === 0 || d === 6) return false;
+  if (sessionWeekIntensity(w) === 0) return false;
+  if (sessionWeekIntensity(w) < 0.3) return false;
+  if (d === 1) return Math.random() < 0.55;
+  if (d === 5) return Math.random() < 0.4;
+  return true;
+}
+
+// Stable seeded session masks (regenerate once)
+const houseDays = [];
+const senateDays = [];
+for (let i = 0; i < DAYS; i++) {
+  houseDays.push(houseSession(i));
+  senateDays.push(senateSession(i));
+}
+
+const activity = genActivity();
+
+// ---------------------------------------------------------------------------
+// Render months strip
+// ---------------------------------------------------------------------------
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function renderMonths(target) {
+  const el = document.getElementById(target);
+  el.innerHTML = '';
+  // Approximate month-week positions (each month ~4.33 weeks, start mid-Jan)
+  let prev = -1;
+  for (let w = 0; w < WEEKS; w++) {
+    const monthIdx = Math.floor(w / 4.33);
+    if (monthIdx !== prev && monthIdx < 12) {
+      const span = document.createElement('span');
+      span.style.gridColumn = (w + 1) + ' / span 4';
+      span.textContent = MONTHS[monthIdx];
+      el.appendChild(span);
+      prev = monthIdx;
+    }
+  }
+}
+renderMonths('months-base');
+renderMonths('months-a');
+renderMonths('months-b');
+
+// ---------------------------------------------------------------------------
+// Render grid
+// ---------------------------------------------------------------------------
+function renderGrid(target, opts = {}) {
+  const el = document.getElementById(target);
+  el.innerHTML = '';
+  for (let i = 0; i < DAYS; i++) {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    if (activity[i] > 0) tile.classList.add('l' + activity[i]);
+    if (opts.showRecess) {
+      const inSession = houseDays[i] || senateDays[i];
+      if (!inSession) tile.classList.add('recess');
+    }
+    el.appendChild(tile);
+  }
+}
+
+renderGrid('grid-base');
+renderGrid('grid-a', { showRecess: true });
+renderGrid('grid-b');
+
+// ---------------------------------------------------------------------------
+// Render Option B stripe
+// ---------------------------------------------------------------------------
+const stripeEl = document.getElementById('stripe-b');
+for (let w = 0; w < WEEKS; w++) {
+  const cell = document.createElement('div');
+  cell.className = 'stripe-cell';
+  // 7 daily bars per week, but visually we collapse to 1 weekly cell with
+  // dominant state — show as full bar if any of Tue-Thu were in session
+  const houseActive = [1,2,3,4,5].some(d => houseDays[w*7+d]);
+  const senateActive = [1,2,3,4,5].some(d => senateDays[w*7+d]);
+  const h = document.createElement('div');
+  h.className = 'stripe-bar' + (houseActive ? ' in-house' : '');
+  const s = document.createElement('div');
+  s.className = 'stripe-bar' + (senateActive ? ' in-senate' : '');
+  cell.appendChild(h);
+  cell.appendChild(s);
+  stripeEl.appendChild(cell);
+}
+</script>
+</body>
+</html>

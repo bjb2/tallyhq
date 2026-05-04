@@ -475,6 +475,79 @@
         <span class="total">{{ '%.1f'|format(grid.total) }} intensity points</span>
       </h2>
       <div class="grid-host" data-day-scope="legislator:{{ entity.bioguide_id }}">{{ svg|safe }}</div>
+
+      {% if session_compare_svgs %}
+      <style>
+        .session-compare {
+          margin-top: 32px; padding: 24px; border: 1px dashed var(--border);
+          border-radius: 8px; background: var(--bg-elev);
+        }
+        .session-compare h3 {
+          font-family: var(--serif); font-size: 16px; margin: 0 0 4px;
+        }
+        .session-compare .disclaimer {
+          color: var(--fg-muted); font-size: 11px; margin: 0 0 16px;
+          font-family: var(--mono);
+        }
+        .session-compare .variant {
+          margin-bottom: 24px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--border-muted);
+        }
+        .session-compare .variant:last-child { border-bottom: none; }
+        .session-compare .variant h4 {
+          font-family: var(--serif); font-size: 14px; margin: 0 0 4px;
+        }
+        .session-compare .variant .note {
+          color: var(--fg-muted); font-size: 12px; margin: 0 0 10px;
+        }
+        .session-compare .grid-wrap {
+          background: #fff; border: 1px solid var(--border);
+          border-radius: 6px; padding: 12px;
+          overflow-x: auto;
+        }
+        .session-compare .legend {
+          font-size: 11px; color: var(--fg-muted);
+          font-family: var(--mono); margin-top: 8px;
+          display: flex; gap: 16px; flex-wrap: wrap;
+        }
+        .session-compare .swatch {
+          display: inline-block; width: 12px; height: 12px;
+          border-radius: 2px; vertical-align: middle; margin-right: 4px;
+          border: 1px solid var(--border);
+        }
+      </style>
+      <div class="session-compare">
+        <h3>Session-marker comparison (prototype)</h3>
+        <p class="disclaimer">Synthetic House/Senate session calendar — real data TBD from congress.gov/days-in-session. Pick the visual treatment that reads cleanest, then we wire real data.</p>
+
+        <div class="variant">
+          <h4>Baseline — no session info</h4>
+          <p class="note">What we ship today. Recess days look identical to in-session quiet days.</p>
+          <div class="grid-wrap">{{ session_compare_svgs.baseline|safe }}</div>
+        </div>
+
+        <div class="variant">
+          <h4>Option A — muted background on full-recess weekday cells</h4>
+          <p class="note">Empty weekday tiles get a darker cream when both chambers were in recess. Active days unchanged. Subtlest.</p>
+          <div class="grid-wrap">{{ session_compare_svgs.recess_bg|safe }}</div>
+          <div class="legend">
+            <span><span class="swatch" style="background:#ece8de"></span>in session, no activity</span>
+            <span><span class="swatch" style="background:#dfd9c8"></span>recess</span>
+          </div>
+        </div>
+
+        <div class="variant">
+          <h4>Option B — chamber stripes under grid</h4>
+          <p class="note">Two thin rows under the heatmap: top = House, bottom = Senate. Colored where in session, transparent where recess. Heatmap cells untouched.</p>
+          <div class="grid-wrap">{{ session_compare_svgs.stripe|safe }}</div>
+          <div class="legend">
+            <span><span class="swatch" style="background:#cd6f4f"></span>House in session</span>
+            <span><span class="swatch" style="background:#5588a3"></span>Senate in session</span>
+          </div>
+        </div>
+      </div>
+      {% endif %}
       <div class="legend">
         Less
         <span class="scale">

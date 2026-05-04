@@ -21,6 +21,10 @@ class Adapter(ABC):
     name: ClassVar[str]
     schema_version: ClassVar[int] = 1
     cadence: ClassVar[timedelta] = timedelta(days=1)
+    # Adapters that don't read/write the events DB (filesystem-only) can set
+    # this to False; the CLI then uses an in-memory DB so it never contends
+    # for the real DuckDB file lock.
+    requires_db: ClassVar[bool] = True
 
     def __init__(self, store: Store, http: HttpClient):
         self.store = store

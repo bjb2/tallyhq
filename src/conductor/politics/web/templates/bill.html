@@ -519,6 +519,334 @@
     </section>
     {% endif %}
 
+    {% if crs_summaries %}
+    <section class="block" id="crs-summaries">
+      <h2>CRS summaries</h2>
+      <p class="sub">
+        Plain-English summaries written by the <strong>Congressional Research Service</strong> — neutral, nonpartisan staff who summarize bills as they advance through stages. The authoritative description of what each version of the bill does.
+      </p>
+      <style>
+        .crs-list { display: flex; flex-direction: column; gap: 12px; }
+        .crs-row {
+          background: var(--bg-elev); border: 1px solid var(--border);
+          border-radius: 6px; padding: 14px 18px;
+        }
+        .crs-row .crs-head {
+          display: flex; align-items: baseline; gap: 12px;
+          margin-bottom: 8px; flex-wrap: wrap;
+        }
+        .crs-row .crs-stage {
+          font-family: var(--mono); font-size: 11px;
+          background: var(--bg-elev-2); padding: 2px 8px;
+          border-radius: 999px; color: var(--fg-muted);
+          letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .crs-row .crs-action { font-family: var(--serif); font-size: 14px; color: var(--fg); }
+        .crs-row .crs-date { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); margin-left: auto; }
+        .crs-row .crs-body {
+          font-size: 14px; line-height: 1.6; color: var(--fg);
+          white-space: pre-wrap;
+        }
+        .crs-row.collapsed .crs-body {
+          max-height: 240px; overflow: hidden;
+          mask-image: linear-gradient(to bottom, black 70%, transparent);
+        }
+        .crs-toggle {
+          margin-top: 8px; font-size: 12px; color: var(--accent);
+          cursor: pointer; background: none; border: none; padding: 0;
+        }
+      </style>
+      <div class="crs-list">
+        {# crs_summaries is sorted newest-first per version_code; first item = most recent CRS summary #}
+        {% set latest = crs_summaries[0] %}
+        <div class="crs-row collapsed">
+          <div class="crs-head">
+            <span class="crs-stage">{{ latest.version_code }}</span>
+            <span class="crs-action">{{ latest.action_desc }}</span>
+            <span class="crs-date">{% if latest.action_date %}{{ latest.action_date.strftime('%b %d, %Y') }}{% endif %}</span>
+          </div>
+          <div class="crs-body">{{ latest.summary_text }}</div>
+          <button type="button" class="crs-toggle" onclick="this.parentElement.classList.toggle('collapsed'); this.textContent = this.parentElement.classList.contains('collapsed') ? 'Show more' : 'Show less';">Show more</button>
+        </div>
+
+        {% if crs_summaries|length > 1 %}
+        <details class="crs-earlier">
+          <summary>Show {{ crs_summaries|length - 1 }} earlier CRS summar{% if crs_summaries|length == 2 %}y{% else %}ies{% endif %}</summary>
+          {% for s in crs_summaries[1:] %}
+          <div class="crs-row collapsed">
+            <div class="crs-head">
+              <span class="crs-stage">{{ s.version_code }}</span>
+              <span class="crs-action">{{ s.action_desc }}</span>
+              <span class="crs-date">{% if s.action_date %}{{ s.action_date.strftime('%b %d, %Y') }}{% endif %}</span>
+            </div>
+            <div class="crs-body">{{ s.summary_text }}</div>
+            <button type="button" class="crs-toggle" onclick="this.parentElement.classList.toggle('collapsed'); this.textContent = this.parentElement.classList.contains('collapsed') ? 'Show more' : 'Show less';">Show more</button>
+          </div>
+          {% endfor %}
+        </details>
+        {% endif %}
+      </div>
+      <style>
+        .crs-earlier { margin-top: 12px; }
+        .crs-earlier summary {
+          font-size: 12px; color: var(--fg-muted);
+          cursor: pointer; padding: 6px 0;
+          font-family: var(--mono);
+        }
+        .crs-earlier summary:hover { color: var(--accent); }
+        .crs-earlier[open] summary { color: var(--accent); margin-bottom: 12px; }
+        .crs-earlier .crs-row { margin-bottom: 12px; }
+      </style>
+      <p style="font-size: 11px; color: var(--fg-faint); margin-top: 10px;">
+        via <a href="https://crsreports.congress.gov/" target="_blank" rel="noopener">Congressional Research Service</a> · published through congress.gov
+      </p>
+    </section>
+    {% endif %}
+
+    {% if changelog and changelog.versions %}
+    <section class="block" id="changelog">
+      <h2>
+        Changelog
+        <details class="stage-help">
+          <summary aria-label="What these stages mean">ⓘ</summary>
+          <div class="stage-help-body">
+            <p><strong>How a bill moves through Congress.</strong> Each stage produces a new official text. The diff between them shows what changed at that step.</p>
+            <ol>
+              <li><code>ih</code> / <code>is</code> — <strong>Introduced</strong> in House / Senate. First filed version.</li>
+              <li><code>rfh</code> / <code>rfs</code> — <strong>Referred</strong> to a committee for review.</li>
+              <li><code>rh</code> / <code>rs</code> — <strong>Reported</strong> back by the committee to the floor (often with amendments — this is where most language changes happen).</li>
+              <li><code>pcs</code> / <code>pch</code> — <strong>Placed on Calendar</strong> for floor consideration.</li>
+              <li><code>eh</code> / <code>es</code> — <strong>Engrossed</strong>. Passed by the originating chamber. Text is now what was actually voted on.</li>
+              <li><code>rdh</code> / <code>rds</code> — <strong>Received</strong> by the other chamber.</li>
+              <li><code>eah</code> / <code>eas</code> — <strong>Engrossed Amendment</strong>. The other chamber passed an amended version.</li>
+              <li><code>ath</code> / <code>ats</code> — <strong>Agreed to</strong>. Both chambers settled on the same text.</li>
+              <li><code>enr</code> — <strong>Enrolled</strong>. Final reconciled text, sent to the President.</li>
+              <li><code>pl</code> — <strong>Public Law</strong>. Signed by the President. It's now law.</li>
+              <li><code>pp</code> — <strong>Public Print</strong>. Official printing post-enactment.</li>
+            </ol>
+            <p style="font-size: 12px; color: var(--fg-muted);">Most bills die before <code>eh</code>/<code>es</code>. Going from <code>pcs</code> → <code>enr</code> is the full path through both chambers.</p>
+          </div>
+        </details>
+      </h2>
+      <p class="sub">
+        Line-level diff between text versions of this bill — what actually changed at each legislative stage.
+        {% if changelog.versions|length < 2 %}
+          <em>Only one text version published so far.</em>
+        {% endif %}
+      </p>
+      <style>
+        .stage-help { display: inline-block; margin-left: 8px; vertical-align: middle; position: relative; }
+        .stage-help summary {
+          list-style: none; cursor: pointer; display: inline-flex; align-items: center;
+          justify-content: center; width: 18px; height: 18px; border-radius: 50%;
+          border: 1px solid var(--border); color: var(--fg-muted); font-size: 12px;
+          font-family: var(--mono); user-select: none;
+        }
+        .stage-help summary::-webkit-details-marker { display: none; }
+        .stage-help summary:hover { color: var(--accent); border-color: var(--accent); }
+        .stage-help[open] summary { color: var(--accent); border-color: var(--accent); background: var(--bg-elev); }
+        .stage-help-body {
+          position: absolute; top: 26px; left: 0; z-index: 10;
+          width: min(560px, 90vw); padding: 16px 18px;
+          background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px;
+          box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+          font-size: 13px; line-height: 1.5; color: var(--fg);
+        }
+        .stage-help-body p { margin: 0 0 10px; }
+        .stage-help-body ol { margin: 0; padding-left: 20px; }
+        .stage-help-body ol li { margin-bottom: 4px; }
+        .stage-help-body code {
+          font-family: var(--mono); font-size: 11px; padding: 1px 4px;
+          background: var(--bg-elev-2); border-radius: 3px; color: var(--fg);
+        }
+      </style>
+      <style>
+        .cl-controls {
+          display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+          margin-bottom: 16px;
+        }
+        .cl-controls select {
+          padding: 6px 10px; font-family: var(--mono); font-size: 12px;
+          border: 1px solid var(--border); border-radius: 4px;
+          background: var(--bg-elev); color: var(--fg);
+        }
+        .cl-controls .arrow { color: var(--fg-muted); }
+        .cl-controls button {
+          padding: 6px 14px; font-size: 12px; border: 1px solid var(--accent);
+          background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer;
+        }
+        .cl-controls button:hover { background: var(--accent-hover); }
+        .cl-stats {
+          display: flex; gap: 16px; margin-bottom: 12px;
+          font-family: var(--mono); font-size: 12px;
+        }
+        .cl-stats .add { color: #1a7f37; }
+        .cl-stats .del { color: #b62428; }
+        .cl-stats .ctx { color: var(--fg-muted); }
+        .diff-body {
+          background: var(--bg-elev); border: 1px solid var(--border);
+          border-radius: 6px; overflow-x: auto;
+          font-family: var(--mono); font-size: 12px; line-height: 1.5;
+          max-height: 720px; overflow-y: auto;
+        }
+        .diff-body > div {
+          padding: 1px 12px; white-space: pre-wrap; word-break: break-word;
+        }
+        .diff-add { background: #e6f4ea; color: #0b5223; }
+        .diff-del { background: #fceaea; color: #8a1a1e; }
+        .diff-ctx { color: var(--fg); }
+        .diff-hunk { background: var(--bg-elev-2); color: var(--fg-muted); font-weight: 500; }
+        .diff-file { background: var(--bg-elev-2); color: var(--fg-muted); font-weight: 500; }
+        .diff-empty { padding: 16px; color: var(--fg-muted); text-align: center; }
+        .cl-empty {
+          padding: 20px; background: var(--bg-elev); border: 1px dashed var(--border);
+          border-radius: 6px; color: var(--fg-muted); font-size: 13px;
+        }
+      </style>
+
+      {% if changelog.versions|length >= 2 %}
+        <form class="cl-controls" method="get"
+              action="javascript:void(0)" id="cl-form"
+              data-base="/bill/{{ bill.congress }}/{{ bill.bill_type }}/{{ bill.number }}/changelog">
+          <label style="font-size:12px; color: var(--fg-muted);">Compare</label>
+          <select name="from" id="cl-from">
+            {% for v in changelog.versions %}
+              <option value="{{ v.code }}" {% if v.code == changelog.default_from %}selected{% endif %}>
+                {{ v.label }} ({{ v.code }})
+              </option>
+            {% endfor %}
+          </select>
+          <span class="arrow">→</span>
+          <select name="to" id="cl-to">
+            {% for v in changelog.versions %}
+              <option value="{{ v.code }}" {% if v.code == changelog.default_to %}selected{% endif %}>
+                {{ v.label }} ({{ v.code }})
+              </option>
+            {% endfor %}
+          </select>
+          <button type="button" onclick="loadDiff()">View diff</button>
+        </form>
+
+        {% if default_diff_stats %}
+        <div class="cl-stats">
+          <span class="add">+{{ default_diff_stats.added }}</span>
+          <span class="del">−{{ default_diff_stats.removed }}</span>
+          <span class="ctx">{{ default_diff_stats.unchanged }} unchanged</span>
+        </div>
+        {% endif %}
+
+        <style>
+          .ai-summary {
+            background: var(--bg-elev); border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            border-radius: 6px; padding: 14px 18px; margin-bottom: 12px;
+          }
+          .ai-summary-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+          .ai-tag {
+            font-family: var(--mono); font-size: 10px;
+            background: var(--accent); color: #fff; padding: 2px 8px;
+            border-radius: 999px; letter-spacing: 0.06em; text-transform: uppercase;
+          }
+          .ai-meta { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }
+          .ai-summary-body { font-size: 14px; line-height: 1.6; color: var(--fg); }
+          .ai-summary-body p { margin: 0 0 10px; }
+          .ai-summary-body p:last-child { margin-bottom: 0; }
+          .ai-summary-body strong { color: var(--fg); }
+          .ai-disclaimer { font-size: 11px; color: var(--fg-muted); margin: 10px 0 0; }
+        </style>
+
+        {% set ai_summary = default_ai_summary %}
+        <style>
+          .ai-loading {
+            background: var(--bg-elev); border: 1px solid var(--border);
+            border-left: 3px solid var(--accent); border-radius: 6px;
+            padding: 14px 18px; margin-bottom: 12px;
+            color: var(--fg-muted); font-size: 13px;
+          }
+          .ai-loading .dots::after { content: "."; animation: dots 1.4s steps(4, end) infinite; }
+          @keyframes dots { 0%,20%{content:""} 40%{content:"."} 60%{content:".."} 80%,100%{content:"..."} }
+          .ai-error {
+            background: #fceaea; border: 1px solid #b62428; border-radius: 6px;
+            padding: 12px 16px; margin-bottom: 12px;
+            color: #8a1a1e; font-size: 13px;
+          }
+        </style>
+        <div id="ai-summary-target"
+             data-base="/bill/{{ bill.congress }}/{{ bill.bill_type }}/{{ bill.number }}/changelog"
+             data-passed="{{ '1' if is_passed else '0' }}"
+             data-from="{{ changelog.default_from or '' }}"
+             data-to="{{ changelog.default_to or '' }}">
+          {% if ai_summary %}
+            {% include "_ai_summary_card.html" %}
+          {% elif is_passed and changelog.default_from and changelog.default_to and changelog.default_from != changelog.default_to %}
+            <div class="ai-loading">
+              <strong>Generating AI summary<span class="dots"></span></strong><br>
+              Reading both versions of the bill and writing a plain-English summary. Typical bills take 5–15 seconds; large reconciliation bills can take a minute. This summary will be cached after generation.
+            </div>
+          {% endif %}
+        </div>
+
+        {% if is_passed and not ai_summary and changelog.default_from and changelog.default_to and changelog.default_from != changelog.default_to %}
+        <script>
+          (async function autoGenerateAISummary() {
+            const target = document.getElementById('ai-summary-target');
+            const base = target.dataset.base;
+            const from = target.dataset.from;
+            const to = target.dataset.to;
+            try {
+              const r = await fetch(base + '/' + from + '/' + to + '/summary', {
+                method: 'POST',
+                headers: { 'Accept': 'text/html' },
+              });
+              if (!r.ok) {
+                const msg = await r.text();
+                throw new Error('Server returned ' + r.status + ': ' + msg.slice(0, 200));
+              }
+              target.innerHTML = await r.text();
+            } catch (e) {
+              target.innerHTML = '<div class="ai-error">Could not generate summary. ' +
+                                 (e.message || 'Unknown error') + '</div>';
+            }
+          })();
+        </script>
+        {% endif %}
+
+        <div id="cl-diff-target">
+          {% if default_diff_html %}
+            {{ default_diff_html|safe }}
+          {% else %}
+            <div class="cl-empty">
+              Diff not yet rendered. Run <code>conductor pull govinfo_bill_text</code> to fetch text versions.
+            </div>
+          {% endif %}
+        </div>
+
+        <script>
+          function loadDiff() {
+            const form = document.getElementById('cl-form');
+            const from = document.getElementById('cl-from').value;
+            const to = document.getElementById('cl-to').value;
+            if (from === to) {
+              document.getElementById('cl-diff-target').innerHTML =
+                '<div class="cl-empty">Pick two different versions to compare.</div>';
+              return;
+            }
+            const url = form.dataset.base + '/' + from + '/' + to;
+            window.location.href = url;
+          }
+        </script>
+      {% else %}
+        <div class="cl-empty">
+          {% if changelog.versions %}
+            Only the <strong>{{ changelog.versions[0].label }}</strong> version is available — nothing to diff yet.
+          {% else %}
+            No text versions fetched yet. Run <code>conductor pull govinfo_bill_text</code>.
+          {% endif %}
+        </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
     {% if lobby_clients %}
     <section class="block">
       <h2>Lobbying activity</h2>
