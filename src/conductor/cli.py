@@ -522,11 +522,13 @@ def cmd_politics_daily_update(args, store: Store) -> int:
             print(f"[daily] funding_sync: ERROR {e}", file=sys.stderr, flush=True)
 
     daily_adapters = [
-        "congress_rollcalls",       # House — fast, no key
-        "senate_rollcalls",         # Senate — fast, no key
-        "congress_amendments",      # api.congress.gov, requires key
-        "congress_bill_actions",    # depends on bills already in DB
-        "govinfo_crec",             # floor speeches, no key
+        "congress_rollcalls",         # House — fast, no key
+        "senate_rollcalls",           # Senate — fast, no key
+        "congress_amendments",        # api.congress.gov, requires key
+        "congress_bill_actions",      # depends on bills already in DB
+        "govinfo_crec",               # floor speeches, no key
+        "govinfo_bill_text",          # bill text → FS (incremental, cursor-aware)
+        "congress_bill_summaries",    # CRS summaries (skip-if-current SQL filter)
     ]
     if args.with_bills:
         daily_adapters.insert(2, "congress_bills")  # api-key, slow
@@ -548,6 +550,18 @@ def cmd_politics_daily_update(args, store: Store) -> int:
                     print(f"[daily] {name}: ERROR {e}", file=sys.stderr, flush=True)
 
     asyncio.run(_run())
+
+    # Ingest any new bill_text from the FS tree into the DB. Cheap when the
+    # govinfo_bill_text pull above found 0 new packages (no-op walk).
+    try:
+        from conductor.politics import bill_text as bt_mod
+        inserted, skipped = bt_mod.ingest_from_fs(store, bt_mod.DEFAULT_TEXT_ROOT)
+        summary.append(f"ingest-bill-text: +{inserted}/skip {skipped}")
+        print(f"[daily] ingest-bill-text: inserted={inserted} skipped={skipped}", flush=True)
+    except Exception as e:
+        summary.append(f"ingest-bill-text: ERROR {type(e).__name__}")
+        print(f"[daily] ingest-bill-text: ERROR {e}", file=sys.stderr, flush=True)
+
     print("[daily] done — " + " · ".join(summary))
     return 0
 
