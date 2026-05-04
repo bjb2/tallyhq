@@ -66,6 +66,62 @@ async def _fetch_totals(
         return None
 
 
+async def _search_candidate(
+    client: httpx.AsyncClient,
+    api_key: str,
+    *,
+    name: str,
+    cycle: int,
+    chamber: str,
+    state: str,
+    district: Optional[int],
+) -> Optional[str]:
+    """Resolve fec candidate_id by name when stored ID is stale/missing.
+
+    Filters by office (H/S), state, and (for House) district. Returns the
+    highest-relevance match's candidate_id, or None.
+    """
+    office = "H" if chamber == "house" else "S" if chamber == "senate" else None
+    if not office:
+        return None
+    params = {
+        "q": name,
+        "cycle": cycle,
+        "office": office,
+        "state": state,
+        "api_key": api_key,
+        "per_page": 5,
+        "sort": "-receipts",
+    }
+    if office == "H" and district is not None:
+        params["district"] = f"{int(district):02d}"
+    try:
+        r = await client.get(f"{API_BASE}/candidates/search/", params=params)
+        if r.status_code != 200:
+            return None
+        results = r.json().get("results") or []
+    except (httpx.HTTPError, ValueError) as e:
+        logger.debug("openfec search %s cycle %s failed: %s", name, cycle, e)
+        return None
+
+    last_token = (name.split()[-1] if name else "").lower()
+    for cand in results:
+        if office and cand.get("office") != office:
+            continue
+        if cand.get("state") and cand["state"] != state:
+            continue
+        cycles = cand.get("cycles") or []
+        if cycle not in cycles:
+            continue
+        cand_name = (cand.get("name") or "").lower()
+        if last_token and last_token not in cand_name:
+            continue
+        cid = cand.get("candidate_id")
+        if cid:
+            return cid
+    return None
+
+
 async def sync(
     store: Store,
     cycles: tuple[int, ...] = (2026, 2024),
@@ -101,16 +157,57 @@ async def sync(
     async def _one(client, ent, cycle):
         if (ent.bioguide_id, cycle) in existing:
             return
-        fec_id = None
+
+        primary_id = None
         if ent.ids and ent.ids.get("fec"):
             v = ent.ids["fec"]
-            fec_id = v[-1] if isinstance(v, list) and v else (v if isinstance(v, str) else None)
-        if not fec_id:
-            return
-        async with sem:
-            data = await _fetch_totals(client, api_key, fec_id, cycle)
-            if sleep_per_call > 0:
-                await asyncio.sleep(sleep_per_call)
+            primary_id = v[-1] if isinstance(v, list) and v else (v if isinstance(v, str) else None)
+
+        # 1. cached resolution (positive or negative)
+        cached, cached_id = fm.get_resolution(store, ent.bioguide_id, cycle)
+        if cached:
+            if cached_id is None:
+                return  # negative cache — name search already failed
+            fec_id = cached_id
+            data = None
+            async with sem:
+                data = await _fetch_totals(client, api_key, fec_id, cycle)
+                if sleep_per_call > 0:
+                    await asyncio.sleep(sleep_per_call)
+            if not data:
+                return
+        else:
+            # 2. primary path
+            fec_id = primary_id
+            data = None
+            if fec_id:
+                async with sem:
+                    data = await _fetch_totals(client, api_key, fec_id, cycle)
+                    if sleep_per_call > 0:
+                        await asyncio.sleep(sleep_per_call)
+            # 3. fallback: name search → /totals/
+            if not data:
+                async with sem:
+                    resolved = await _search_candidate(
+                        client, api_key,
+                        name=ent.full_name or f"{ent.first_name} {ent.last_name}".strip(),
+                        cycle=cycle,
+                        chamber=ent.chamber,
+                        state=ent.state,
+                        district=ent.district,
+                    )
+                    if sleep_per_call > 0:
+                        await asyncio.sleep(sleep_per_call)
+                if resolved and resolved != primary_id:
+                    fec_id = resolved
+                    async with sem:
+                        data = await _fetch_totals(client, api_key, fec_id, cycle)
+                        if sleep_per_call > 0:
+                            await asyncio.sleep(sleep_per_call)
+                    fm.put_resolution(store, ent.bioguide_id, cycle, resolved, "search")
+                else:
+                    fm.put_resolution(store, ent.bioguide_id, cycle, None, "search")
+                    return
         if not data:
             return
         t = fm.FundingTotal(

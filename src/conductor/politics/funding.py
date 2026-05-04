@@ -41,7 +41,46 @@ CREATE TABLE IF NOT EXISTS funding_totals (
 );
 CREATE INDEX IF NOT EXISTS idx_funding_cycle ON funding_totals (cycle);
 CREATE INDEX IF NOT EXISTS idx_funding_receipts ON funding_totals (receipts);
+
+CREATE TABLE IF NOT EXISTS fec_id_resolutions (
+    bioguide_id  VARCHAR NOT NULL,
+    cycle        INTEGER NOT NULL,
+    fec_id       VARCHAR,         -- NULL = searched, no match (negative cache)
+    source       VARCHAR,         -- 'primary' | 'search' | 'manual'
+    resolved_at  TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (bioguide_id, cycle)
+);
 """
+
+
+def get_resolution(store: Store, bioguide: str, cycle: int) -> tuple[bool, Optional[str]]:
+    """Look up cached fec_id resolution for (bioguide, cycle).
+    Returns (is_cached, fec_id_or_none). is_cached=False means never searched."""
+    ensure_schema(store)
+    row = store.conn.execute(
+        "SELECT fec_id FROM fec_id_resolutions WHERE bioguide_id = ? AND cycle = ?",
+        [bioguide, cycle],
+    ).fetchone()
+    if row is None:
+        return False, None
+    return True, row[0]
+
+
+def put_resolution(
+    store: Store, bioguide: str, cycle: int, fec_id: Optional[str], source: str,
+) -> None:
+    ensure_schema(store)
+    store.conn.execute(
+        """
+        INSERT INTO fec_id_resolutions (bioguide_id, cycle, fec_id, source, resolved_at)
+        VALUES (?, ?, ?, ?, NOW())
+        ON CONFLICT (bioguide_id, cycle) DO UPDATE SET
+            fec_id = excluded.fec_id,
+            source = excluded.source,
+            resolved_at = NOW()
+        """,
+        [bioguide, cycle, fec_id, source],
+    )
 
 
 @dataclass
