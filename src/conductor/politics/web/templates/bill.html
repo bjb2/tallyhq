@@ -158,12 +158,6 @@
     background: var(--bg-elev-2) center/cover no-repeat;
     flex-shrink: 0;
   }
-  /* Committee leadership ring — gold = Chair, silver = Ranking,
-     pale variants = subcommittee. Box-shadow keeps photo box intact. */
-  .ph.role-chair      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #c9a227; }
-  .ph.role-ranking    { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #8a8a8a; }
-  .ph.role-subchair   { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #e6cf86; }
-  .ph.role-subranking { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #c4c4c4; }
   .role-badge {
     display: inline-block;
     padding: 1px 8px;
@@ -215,12 +209,20 @@
     box-shadow: 0 0 0 1px var(--border);
   }
   .cosp-grid a:hover .ph { box-shadow: 0 0 0 2px var(--accent); }
+
+  /* Committee leadership ring — gold = Chair, silver = Ranking, pale
+     variants = subcommittee. Defined late and scoped under .bill-grid
+     so they outrank `.cosp-grid .ph` / `.sponsor-card .ph` on tie. */
+  .bill-grid .ph.role-chair      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #d99c00 !important; }
+  .bill-grid .ph.role-ranking    { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #6f6f6f !important; }
+  .bill-grid .ph.role-subchair   { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #e8b53d !important; }
+  .bill-grid .ph.role-subranking { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #a8a8a8 !important; }
   /* Preserve role ring on hover — accent is transient affordance,
      leadership status is the persistent signal. */
-  .cosp-grid a:hover .ph.role-chair      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #c9a227, 0 0 0 7px var(--accent); }
-  .cosp-grid a:hover .ph.role-ranking    { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #8a8a8a, 0 0 0 7px var(--accent); }
-  .cosp-grid a:hover .ph.role-subchair   { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #e6cf86, 0 0 0 6px var(--accent); }
-  .cosp-grid a:hover .ph.role-subranking { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #c4c4c4, 0 0 0 6px var(--accent); }
+  .bill-grid .cosp-grid a:hover .ph.role-chair      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #d99c00, 0 0 0 7px var(--accent) !important; }
+  .bill-grid .cosp-grid a:hover .ph.role-ranking    { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #6f6f6f, 0 0 0 7px var(--accent) !important; }
+  .bill-grid .cosp-grid a:hover .ph.role-subchair   { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #e8b53d, 0 0 0 6px var(--accent) !important; }
+  .bill-grid .cosp-grid a:hover .ph.role-subranking { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #a8a8a8, 0 0 0 6px var(--accent) !important; }
   .cosp-grid .nm {
     font-size: 11px;
     color: var(--fg-muted);
