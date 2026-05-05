@@ -504,6 +504,27 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def get_store() -> Store:
         return Store(db_path) if db_path else Store()
 
+    @app.middleware("http")
+    async def _duckdb_lock_to_503(request: Request, call_next):
+        """Daily-update spawns a subprocess that holds the DuckDB write-lock for
+        the duration of the run. Web requests that try to open the DB during
+        that window crash with `_duckdb.IOException: Could not set lock ...`.
+        Convert that to a fast 503 + Retry-After so the client sees a clean
+        "syncing in progress" instead of a 500.
+        """
+        import duckdb as _duckdb
+        try:
+            return await call_next(request)
+        except _duckdb.IOException as e:
+            msg = str(e)
+            if "Could not set lock" in msg or "Conflicting lock" in msg:
+                return JSONResponse(
+                    {"error": "syncing", "detail": "daily-update in progress, retry shortly"},
+                    status_code=503,
+                    headers={"Retry-After": "60"},
+                )
+            raise
+
     @app.get("/", response_class=HTMLResponse)
     def landing(q: str | None = Query(None, max_length=80)):
         # Header search submits to "/" — punt to /browse for the actual results
