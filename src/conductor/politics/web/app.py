@@ -27,6 +27,7 @@ from conductor.politics import (
     bill_text as bill_text_mod, bill_views, bills as bills_mod,
     committees_sync as committees_mod,
     entities, funding as funding_mod, landing as landing_mod,
+    legislators_social_sync as social_mod,
     lobby_views, photos as photos_mod, rollcall_views, stats as stats_mod,
 )
 from conductor.politics.photos import photo_url
@@ -686,6 +687,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             stats = stats_mod.compute(store, ent.entity_id)
             committees = committees_mod.member_committees(store, ent.bioguide_id)
             funding_rows = funding_mod.for_member(store, ent.bioguide_id)
+            social = social_mod.get(store, ent.bioguide_id)
 
             # Per-tab feed query — different event_type filter + limit
             tab_filters = {
@@ -714,6 +716,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             stats=stats,
             committees=committees,
             funding=funding_rows,
+            social=social,
             recent=recent,
             days=days,
             tab=tab,
@@ -1326,6 +1329,57 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                     _log.error("daily-update spawn failed: %s", e)
 
         asyncio.create_task(_loop())
+
+    @app.on_event("startup")
+    async def _run_backfill_adapters():
+        """One-shot backfill applied at boot.
+
+        Set BACKFILL_ADAPTERS env to a comma list of adapter names (e.g.
+        "legislators-social") to run them once on next boot. Writes a marker
+        file so re-restarts don't re-run; bump the env value to force again.
+
+        Mirrors the RESET_CURSORS shape: set, deploy, marker prevents
+        re-firing, eventually unset the env to clean up.
+        """
+        import logging as _logging
+        spec = os.environ.get("BACKFILL_ADAPTERS", "").strip()
+        if not spec:
+            return
+        _log = _logging.getLogger("conductor.backfill")
+        marker_dir = (db_path.parent if db_path else Path("/data"))
+        marker = marker_dir / f".backfill-{abs(hash(spec)) % (10**12)}.applied"
+        if marker.exists():
+            _log.info("BACKFILL_ADAPTERS: marker present, skipping (%s)", marker.name)
+            return
+        names = [n.strip() for n in spec.split(",") if n.strip()]
+        store = get_store()
+        try:
+            for n in names:
+                try:
+                    if n in ("legislators-social", "legislators-social-sync"):
+                        from conductor.politics import legislators_social_sync as lss
+                        rows = lss.sync(store)
+                        _log.info("backfill %s: %d rows", n, rows)
+                    elif n in ("legislators-sync", "legislators"):
+                        from conductor.politics import legislators_sync as ls
+                        rows = ls.sync(store)
+                        _log.info("backfill %s: %d rows", n, rows)
+                    elif n in ("committees-sync", "committees"):
+                        from conductor.politics import committees_sync as cs
+                        rows = cs.sync(store)
+                        _log.info("backfill %s: %d rows", n, rows)
+                    else:
+                        _log.warning("backfill %s: unknown adapter, skipping", n)
+                except Exception as e:
+                    _log.error("backfill %s: ERROR %s", n, e)
+            try:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(spec)
+                _log.info("backfill marker written: %s", marker)
+            except Exception as e:
+                _log.error("could not write backfill marker: %s", e)
+        finally:
+            store.close()
 
     @app.on_event("startup")
     async def _apply_cursor_overrides():

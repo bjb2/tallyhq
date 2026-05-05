@@ -508,8 +508,14 @@ def cmd_politics_daily_update(args, store: Store) -> int:
     if args.full or weekday == 0:
         from conductor.politics import legislators_sync as ls
         from conductor.politics import committees_sync as cs
+        from conductor.politics import legislators_social_sync as lss
         ls.sync(store)
         cs.sync(store)
+        try:
+            n_social = lss.sync(store)
+            print(f"[daily] legislators-social-sync: {n_social} rows", flush=True)
+        except Exception as e:
+            print(f"[daily] legislators-social-sync: ERROR {e}", file=sys.stderr, flush=True)
         # Funding totals — FEC files quarterly, weekly refresh is plenty.
         # Throttled (~65 req/min) to stay under OpenFEC's 1000/hr cap.
         # skip_if_present=True so we only fetch (bioguide, cycle) pairs we don't have yet.
@@ -570,6 +576,13 @@ def cmd_politics_sync_committees(args, store: Store) -> int:
     from conductor.politics import committees_sync as cs
     n = cs.sync(store)
     print(f"committee assignments synced: {n} rows")
+    return 0
+
+
+def cmd_politics_sync_social(args, store: Store) -> int:
+    from conductor.politics import legislators_social_sync as lss
+    n = lss.sync(store)
+    print(f"legislator_social rows: {n}")
     return 0
 
 
@@ -822,6 +835,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="include past committee assignments, not just current")
     pp_sc.add_argument("--concurrency", type=int, default=8)
     pp_sc.set_defaults(func=cmd_politics_sync_committees)
+
+    pp_ss = psub.add_parser(
+        "sync-legislators-social",
+        help="sync social-media handles from @unitedstates/congress-legislators",
+    )
+    pp_ss.set_defaults(func=cmd_politics_sync_social)
 
     return parser
 
