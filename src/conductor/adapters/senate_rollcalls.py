@@ -120,6 +120,12 @@ class SenateRollcallsAdapter(Adapter):
             return None
         if status == 404:
             return None
+        # senate.gov 301-redirects missing votes to roll-call-vote-not-available.htm
+        # (HTML 200). Treat non-XML responses as missing so streak_404 increments
+        # and the walk terminates instead of advancing the cursor on phantom votes.
+        head = text.lstrip()[:200]
+        if not head.startswith("<?xml") or "<roll_call_vote" not in text[:1000]:
+            return None
         return text
 
     def _parse(
