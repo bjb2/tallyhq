@@ -8,6 +8,8 @@ Routes:
 """
 from __future__ import annotations
 
+import os
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from conductor.aggregations.activity_grid import grid
 from conductor.politics import (
+    analytics as analytics_mod,
     bill_summary as bill_summary_mod,
     bill_text as bill_text_mod, bill_views, bills as bills_mod,
     committees_sync as committees_mod,
@@ -503,6 +506,51 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     def get_store() -> Store:
         return Store(db_path) if db_path else Store()
+
+    own_host = os.environ.get("ANALYTICS_OWN_HOST", "tallyhq.org")
+
+    @app.middleware("http")
+    async def _record_page_view(request: Request, call_next):
+        """Record one row in analytics.duckdb per page request.
+
+        Runs OUTSIDE _duckdb_lock_to_503 so it sees the final response (incl.
+        any 503 we synthesized). Skips static assets, JSON APIs, and infra
+        routes via analytics.should_skip. Errors here are swallowed — analytics
+        must never break a request.
+        """
+        if analytics_mod.should_skip(request.url.path):
+            return await call_next(request)
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        try:
+            ua = request.headers.get("user-agent", "") or ""
+            bot = analytics_mod.is_bot(ua)
+            ip = analytics_mod.client_ip(request)
+            ref_host = analytics_mod.referer_host(
+                request.headers.get("referer"), own_host
+            )
+            vh = analytics_mod.visitor_hash(ip, ua) if not bot else None
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            store = analytics_mod.AnalyticsStore()
+            try:
+                store.record(
+                    path=request.url.path,
+                    status=response.status_code,
+                    method=request.method,
+                    referer_host=ref_host,
+                    ua=ua,
+                    is_bot=bot,
+                    visitor_hash=vh,
+                    dur_ms=dur_ms,
+                )
+            finally:
+                store.close()
+        except Exception as e:
+            import logging as _logging
+            _logging.getLogger("conductor.analytics").warning(
+                "page_view record failed: %s", e
+            )
+        return response
 
     @app.middleware("http")
     async def _duckdb_lock_to_503(request: Request, call_next):
@@ -1202,6 +1250,27 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             status_code=302,
             headers={"Cache-Control": "public, max-age=86400"},
         )
+
+    @app.get("/stats", response_class=HTMLResponse)
+    def stats_page(
+        token: str = Query("", max_length=128),
+        days: int = Query(7, ge=1, le=90),
+        include_bots: int = Query(0, ge=0, le=1),
+    ):
+        """Visitor stats. Gated by `ANALYTICS_TOKEN` env var — pass via ?token=
+        query string. If env unset, the route 404s (off by default).
+        """
+        expected = os.environ.get("ANALYTICS_TOKEN", "").strip()
+        if not expected or token != expected:
+            raise HTTPException(404)
+        store = analytics_mod.AnalyticsStore()
+        try:
+            s = store.summary(days=days, exclude_bots=not bool(include_bots))
+        finally:
+            store.close()
+        tmpl = env.get_template("stats.html")
+        return tmpl.render(s=s, token=token, days=days,
+                           include_bots=bool(include_bots))
 
     @app.on_event("startup")
     async def _schedule_daily_update():

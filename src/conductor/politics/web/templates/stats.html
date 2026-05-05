@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}TallyHQ — visitor stats{% endblock %}
+{% block meta_description %}Internal visitor stats.{% endblock %}
+{% block content %}
+<style>
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .stat { padding: 14px 16px; }
+  .stat .n { font-family: var(--serif); font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .stat .l { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .twocol { grid-template-columns: 1fr; } }
+  table.thin { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.thin th, table.thin td { padding: 6px 10px; border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: top; }
+  table.thin th { color: var(--fg-muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  table.thin td.r, table.thin th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  table.thin td.path { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  .by-day { display: flex; gap: 4px; align-items: flex-end; height: 80px; padding: 14px 16px 4px; }
+  .by-day .col { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; opacity: 0.85; cursor: default; }
+  .by-day .col:hover { opacity: 1; }
+  .ax { display: flex; justify-content: space-between; padding: 0 16px 12px; color: var(--fg-muted); font-size: 11px; }
+  .toolbar { margin: 0 0 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .toolbar a { font-size: 12px; }
+  .pill-link { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg-muted); font-size: 11px; }
+  .pill-link.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pill-link.on:hover { color: #fff; text-decoration: none; }
+</style>
+
+<h1 style="margin:0 0 4px;">visitor stats</h1>
+<div class="toolbar">
+  <span class="muted">last {{ s.days }} day{% if s.days != 1 %}s{% endif %}</span>
+  <span style="color: var(--fg-faint);">·</span>
+  {% for d in [1, 7, 30] %}
+    <a class="pill-link {% if s.days == d %}on{% endif %}"
+       href="?token={{ token|e }}&days={{ d }}&include_bots={{ 1 if include_bots else 0 }}">{{ d }}d</a>
+  {% endfor %}
+  <span style="color: var(--fg-faint);">·</span>
+  <a class="pill-link {% if not include_bots %}on{% endif %}"
+     href="?token={{ token|e }}&days={{ s.days }}&include_bots=0">humans</a>
+  <a class="pill-link {% if include_bots %}on{% endif %}"
+     href="?token={{ token|e }}&days={{ s.days }}&include_bots=1">+bots</a>
+</div>
+
+<div class="stat-grid">
+  <div class="card stat">
+    <div class="n">{{ "{:,}".format(s.pv_today) }}</div>
+    <div class="l">views today</div>
+  </div>
+  <div class="card stat">
+    <div class="n">{{ "{:,}".format(s.uv_today) }}</div>
+    <div class="l">visitors today</div>
+  </div>
+  <div class="card stat">
+    <div class="n">{{ "{:,}".format(s.pv_7d) }}</div>
+    <div class="l">views {{ s.days }}d</div>
+  </div>
+  <div class="card stat">
+    <div class="n">{{ "{:,}".format(s.uv_7d) }}</div>
+    <div class="l">visitors {{ s.days }}d</div>
+  </div>
+  <div class="card stat">
+    <div class="n">{{ "{:,}".format(s.bot_pv) }}</div>
+    <div class="l">bot views {{ s.days }}d</div>
+  </div>
+</div>
+
+{% if s.by_day %}
+{% set max_pv = (s.by_day | map(attribute='pv') | list | max) or 1 %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="by-day">
+    {% for d in s.by_day %}
+      <div class="col"
+           style="height: {{ ((d.pv / max_pv) * 100) | round(1) }}%;"
+           title="{{ d.day }} — {{ d.pv }} views, {{ d.uv }} visitors"></div>
+    {% endfor %}
+  </div>
+  <div class="ax">
+    <span>{{ s.by_day[0].day }}</span>
+    <span>peak {{ "{:,}".format(max_pv) }}/day</span>
+    <span>{{ s.by_day[-1].day }}</span>
+  </div>
+</div>
+{% endif %}
+
+<div class="twocol">
+  <div class="card card-pad">
+    <h3 style="margin:0 0 10px;">top paths</h3>
+    {% if s.top_paths %}
+    <table class="thin">
+      <tr><th>path</th><th class="r">views</th><th class="r">visitors</th></tr>
+      {% for p in s.top_paths %}
+      <tr>
+        <td class="path"><a href="{{ p.path | e }}">{{ p.path }}</a></td>
+        <td class="r">{{ "{:,}".format(p.n) }}</td>
+        <td class="r">{{ "{:,}".format(p.uv) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">no traffic yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card card-pad">
+    <h3 style="margin:0 0 10px;">top referrers</h3>
+    {% if s.top_referers %}
+    <table class="thin">
+      <tr><th>host</th><th class="r">views</th></tr>
+      {% for r in s.top_referers %}
+      <tr><td>{{ r.host }}</td><td class="r">{{ "{:,}".format(r.n) }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">no external referrers yet — most arrivals are direct or come from search results that don't pass referer.</p>
+    {% endif %}
+
+    {% if s.top_bots %}
+    <h3 style="margin:18px 0 10px;">top bots ({{ s.days }}d)</h3>
+    <table class="thin">
+      <tr><th>bot</th><th class="r">views</th></tr>
+      {% for b in s.top_bots %}
+      <tr><td>{{ b.name }}</td><td class="r">{{ "{:,}".format(b.n) }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
