@@ -524,7 +524,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         response = await call_next(request)
         try:
             ua = request.headers.get("user-agent", "") or ""
-            bot = analytics_mod.is_bot(ua)
+            bot = analytics_mod.is_bot(ua) or analytics_mod.is_probe_path(request.url.path)
             ip = analytics_mod.client_ip(request)
             ref_host = analytics_mod.referer_host(
                 request.headers.get("referer"), own_host

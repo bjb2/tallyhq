@@ -56,7 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_page_view_referer     ON page_view (referer_host)
 
 # Don't log assets, JSON APIs, infra. Pageviews only.
 SKIP_PREFIXES = ("/static/", "/api/", "/photo/", "/docs", "/openapi.json")
-SKIP_PATHS = {"/robots.txt", "/sitemap.xml", "/favicon.ico"}
+SKIP_PATHS = {"/robots.txt", "/sitemap.xml", "/favicon.ico", "/stats"}
 
 BOT_RE = re.compile(
     r"(bot|crawler|spider|wget|curl|python-requests|httpx|aiohttp|"
@@ -65,6 +65,31 @@ BOT_RE = re.compile(
     r"uptime|pingdom|datadog|newrelic|semrush|ahrefs|petalbot|applebot|"
     r"duckduckbot|mj12bot|dotbot|seekport|gptbot|claudebot|ccbot|"
     r"perplexitybot|amazonbot|bytespider|headlesschrome)",
+    re.I,
+)
+
+# Path patterns hit only by automated vulnerability scanners. Tallyhq doesn't
+# run WordPress / phpMyAdmin / Drupal / etc., so any request to these is a
+# bot regardless of the User-Agent it claims. UAs commonly spoof Mozilla, so
+# UA regex alone won't catch them — flag by path.
+PROBE_PATH_RE = re.compile(
+    r"^/("
+    r"wp-(admin|login|content|includes|json)|xmlrpc\.php|"
+    r"\.env|\.git|\.aws|\.ssh|\.svn|\.htaccess|\.DS_Store|"
+    r"phpmyadmin|pma|myadmin|adminer|mysql|"
+    r"administrator|joomla|drupal|magento|"
+    r"vendor/phpunit|"
+    r"cgi-bin|fcgi-bin|"
+    r"actuator|server-status|server-info|"
+    r"shell\.php|cmd\.php|c99\.php|r57\.php|webshell|"
+    r"backup\.zip|backup\.tar|database\.sql|dump\.sql|"
+    r"config\.php|configuration\.php|wp-config|"
+    r"owa|exchange|autodiscover|ews/|"
+    r"console|jenkins|kibana|elastic|"
+    r"laravel|symfony|"
+    r"_ignition|telescope/|horizon/|"
+    r"setup|install\.php|installer"
+    r")(/|\.|$)",
     re.I,
 )
 
@@ -79,6 +104,13 @@ def is_bot(ua: str | None) -> bool:
     if not ua:
         return True  # treat absent UA as bot
     return bool(BOT_RE.search(ua))
+
+
+def is_probe_path(path: str) -> bool:
+    """Path looks like a known vuln-scanner probe (WordPress install wizard,
+    phpMyAdmin, .env exfil, etc.). Tallyhq runs none of these stacks, so any
+    hit is automated regardless of claimed UA."""
+    return bool(PROBE_PATH_RE.match(path or ""))
 
 
 def _base_salt() -> str:
