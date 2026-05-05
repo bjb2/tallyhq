@@ -686,6 +686,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 }
             stats = stats_mod.compute(store, ent.entity_id)
             committees = committees_mod.member_committees(store, ent.bioguide_id)
+            role = committees_mod.leadership_roles(store, [ent.bioguide_id]).get(ent.bioguide_id)
             funding_rows = funding_mod.for_member(store, ent.bioguide_id)
             social = social_mod.get(store, ent.bioguide_id)
 
@@ -715,6 +716,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             svg=svg,
             stats=stats,
             committees=committees,
+            role=role,
             funding=funding_rows,
             social=social,
             recent=recent,

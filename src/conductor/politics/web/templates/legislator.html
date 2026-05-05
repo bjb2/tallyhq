@@ -25,6 +25,12 @@
     margin-bottom: 16px;
     max-width: 100%;
   }
+  /* Committee leadership ring on the legislator portrait. !important
+     wins against the 1px var(--border) above. */
+  .photo.role-chair      { box-shadow: 0 0 0 3px var(--bg), 0 0 0 8px #d99c00 !important; }
+  .photo.role-ranking    { box-shadow: 0 0 0 3px var(--bg), 0 0 0 8px #6f6f6f !important; }
+  .photo.role-subchair   { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px #e8b53d !important; }
+  .photo.role-subranking { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px #a8a8a8 !important; }
   @media (max-width: 800px) {
     .profile, .sidebar, .content { min-width: 0; max-width: 100%; }
     .sidebar > * { min-width: 0; max-width: 100%; }
@@ -242,7 +248,9 @@
 
 <div class="profile">
   <aside class="sidebar">
-    <div class="photo" style="background-image: url('{{ photo }}');"></div>
+    <div class="photo{% if role %} role-{{ role.role }}{% endif %}"
+         {% if role %}title="{{ role.title }} of the {{ role.committee_name }}{% if role.is_subcommittee %} (subcommittee){% endif %}"{% endif %}
+         style="background-image: url('{{ photo }}');"></div>
     <div class="name-row">
       <span class="name">{{ entity.full_name }}</span>
     </div>
