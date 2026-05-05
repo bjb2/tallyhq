@@ -158,6 +158,25 @@
     background: var(--bg-elev-2) center/cover no-repeat;
     flex-shrink: 0;
   }
+  /* Committee leadership ring — gold = Chair, silver = Ranking,
+     pale variants = subcommittee. Box-shadow keeps photo box intact. */
+  .ph.role-chair      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #c9a227; }
+  .ph.role-ranking    { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #8a8a8a; }
+  .ph.role-subchair   { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #e6cf86; }
+  .ph.role-subranking { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #c4c4c4; }
+  .role-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    margin-top: 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .role-badge.role-chair      { background: #fff4d6; color: #8a5a00; border: 1px solid #c9a227; }
+  .role-badge.role-ranking    { background: #ececec; color: #444;    border: 1px solid #8a8a8a; }
+  .role-badge.role-subchair   { background: #fbf3dd; color: #8a5a00; border: 1px solid #e6cf86; }
+  .role-badge.role-subranking { background: #f3f3f3; color: #555;    border: 1px solid #c4c4c4; }
   .sponsor-card .info { min-width: 0; }
   .sponsor-card .label {
     color: var(--fg-muted);
@@ -196,6 +215,12 @@
     box-shadow: 0 0 0 1px var(--border);
   }
   .cosp-grid a:hover .ph { box-shadow: 0 0 0 2px var(--accent); }
+  /* Preserve role ring on hover — accent is transient affordance,
+     leadership status is the persistent signal. */
+  .cosp-grid a:hover .ph.role-chair      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #c9a227, 0 0 0 7px var(--accent); }
+  .cosp-grid a:hover .ph.role-ranking    { box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px #8a8a8a, 0 0 0 7px var(--accent); }
+  .cosp-grid a:hover .ph.role-subchair   { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #e6cf86, 0 0 0 6px var(--accent); }
+  .cosp-grid a:hover .ph.role-subranking { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #c4c4c4, 0 0 0 6px var(--accent); }
   .cosp-grid .nm {
     font-size: 11px;
     color: var(--fg-muted);
@@ -304,8 +329,12 @@
     {% if sponsor %}
     <section class="block">
       <h2>Sponsor</h2>
+      {% set sp_role = roles.get(sponsor.bioguide_id) if roles else None %}
       <div class="sponsor-card">
-        <a href="/legislator/{{ sponsor.bioguide_id }}"><div class="ph" style="background-image: url('{{ big_photo(sponsor.bioguide_id) }}');"></div></a>
+        <a href="/legislator/{{ sponsor.bioguide_id }}"
+           {% if sp_role %}title="{{ sponsor.full_name }} — {{ sp_role.title }} of the {{ sp_role.committee_name }}{% if sp_role.is_subcommittee %} (subcommittee){% endif %}"{% endif %}>
+          <div class="ph{% if sp_role %} role-{{ sp_role.role }}{% endif %}" style="background-image: url('{{ big_photo(sponsor.bioguide_id) }}');"></div>
+        </a>
         <div class="info">
           <div class="label">Introduced by</div>
           <div class="name"><a href="/legislator/{{ sponsor.bioguide_id }}">{{ sponsor.full_name }}</a></div>
@@ -316,6 +345,12 @@
             {{ sponsor.chamber|title }} ·
             {{ sponsor.state }}{% if sponsor.district is not none and sponsor.district != 0 %}-{{ '%02d'|format(sponsor.district) }}{% endif %}
           </div>
+          {% if sp_role %}
+          <div class="role-badge role-{{ sp_role.role }}"
+               title="{{ sp_role.title }} of the {{ sp_role.committee_name }}{% if sp_role.is_subcommittee %} (subcommittee){% endif %}">
+            {{ sp_role.title }} · {{ sp_role.committee_name }}{% if sp_role.is_subcommittee %} (sub){% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
     </section>
@@ -935,8 +970,9 @@
       <div class="cosp-grid">
         {% for c in cosponsors %}
           {% set p = c.entity.party[0] if c.entity.party else 'I' %}
-          <a href="/legislator/{{ c.entity.bioguide_id }}" title="{{ c.entity.full_name }} ({{ c.entity.state }}-{{ p }}){% if c.is_original %} · original cosponsor{% endif %}">
-            <div class="ph" style="background-image: url('{{ photo(c.entity.bioguide_id) }}');"></div>
+          {% set cr = roles.get(c.entity.bioguide_id) if roles else None %}
+          <a href="/legislator/{{ c.entity.bioguide_id }}" title="{{ c.entity.full_name }} ({{ c.entity.state }}-{{ p }}){% if c.is_original %} · original cosponsor{% endif %}{% if cr %} · {{ cr.title }} of the {{ cr.committee_name }}{% if cr.is_subcommittee %} (subcommittee){% endif %}{% endif %}">
+            <div class="ph{% if cr %} role-{{ cr.role }}{% endif %}" style="background-image: url('{{ photo(c.entity.bioguide_id) }}');"></div>
             <div class="nm">{{ c.entity.last_name }} <span class="badge {{ p }}">{{ p }}</span></div>
           </a>
         {% endfor %}

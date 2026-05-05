@@ -969,6 +969,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                     cosponsors=[],
                     tallies=tallies,
                     actions=[],
+                    roles={},
                     photo=lambda bg: photo_url(bg, "225x275"),
                     big_photo=lambda bg: photo_url(bg, "450x550"),
                 )
@@ -977,6 +978,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             cosponsors = bill_views.cosponsors(store, bill_id)
             tallies = bill_views.rollcall_tallies(store, bill_id)
             actions = _fetch_bill_actions(store, bill_id)
+            role_bgs: list[str] = []
+            if sponsor:
+                role_bgs.append(sponsor.bioguide_id)
+            role_bgs.extend(c.entity.bioguide_id for c in cosponsors)
+            roles = committees_mod.leadership_roles(store, role_bgs)
             lobby_clients = lobby_views.top_clients_for_bill(store, bill_id, limit=10)
             text_versions = _format_text_versions(b.text_versions)
             crs_summaries = _fetch_crs_summaries(store, bill_id)
@@ -1022,6 +1028,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             default_diff_stats=default_diff_stats,
             default_ai_summary=default_ai_summary,
             is_passed=is_passed,
+            roles=roles,
             photo=lambda bg: photo_url(bg, "225x275"),
             big_photo=lambda bg: photo_url(bg, "450x550"),
         )

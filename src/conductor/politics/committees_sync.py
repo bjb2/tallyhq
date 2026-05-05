@@ -166,6 +166,81 @@ def member_committees(store: Store, bioguide: str) -> list[dict]:
     ]
 
 
+_CHAIR_TITLES = {"chair", "chairman", "chairwoman"}
+_RANKING_TITLES = {"ranking member", "ranking minority member", "ranking"}
+
+
+def _classify_title(title: str | None) -> str | None:
+    """Return 'chair' or 'ranking' for full-committee leadership titles, else None.
+
+    Vice Chair / Vice Chairman are deliberately excluded: they're not the
+    decision-making seat and their inclusion would dilute the signal.
+    """
+    if not title:
+        return None
+    t = title.strip().lower()
+    if t in _CHAIR_TITLES:
+        return "chair"
+    if t in _RANKING_TITLES:
+        return "ranking"
+    return None
+
+
+def leadership_roles(store: Store, bioguides: list[str]) -> dict[str, dict]:
+    """For each bioguide in the input list, return their highest-priority
+    committee leadership role. Members with no qualifying role are absent.
+
+    Priority: full-committee Chair > full-committee Ranking
+            > subcommittee Chair    > subcommittee Ranking.
+
+    Returned shape per member:
+        {role, title, committee_name, committee_code, is_subcommittee}
+    where role ∈ {"chair", "ranking", "subchair", "subranking"}.
+    """
+    if not bioguides:
+        return {}
+    ensure_schema(store)
+    placeholders = ",".join(["?"] * len(bioguides))
+    rows = store.conn.execute(
+        f"""
+        SELECT a.bioguide_id, a.title, c.name, a.committee_code,
+               (c.committee_type = 'subcommittee') AS is_sub
+        FROM committee_assignments a
+        LEFT JOIN committees c ON c.committee_code = a.committee_code
+        WHERE a.bioguide_id IN ({placeholders})
+        """,
+        bioguides,
+    ).fetchall()
+
+    PRIORITY = {
+        ("chair", False): (1, "chair"),
+        ("ranking", False): (2, "ranking"),
+        ("chair", True): (3, "subchair"),
+        ("ranking", True): (4, "subranking"),
+    }
+    out: dict[str, dict] = {}
+    for bg, title, cname, ccode, is_sub in rows:
+        kind = _classify_title(title)
+        if kind is None:
+            continue
+        is_sub_b = bool(is_sub)
+        prio, role = PRIORITY[(kind, is_sub_b)]
+        existing = out.get(bg)
+        if existing is not None and existing["_prio"] <= prio:
+            continue
+        out[bg] = {
+            "_prio": prio,
+            "role": role,
+            "title": title,
+            "committee_name": cname or ccode,
+            "committee_code": ccode,
+            "is_subcommittee": is_sub_b,
+        }
+    for v in out.values():
+        v.pop("_prio", None)
+    return out
+
+
 def on_committee(store: Store, committee_code: str) -> list[str]:
     ensure_schema(store)
     rows = store.conn.execute(
