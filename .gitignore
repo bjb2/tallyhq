@@ -27,3 +27,6 @@ data/
 # Build
 dist/
 build/
+
+# Generated graphics (re-rendered on demand)
+out/
