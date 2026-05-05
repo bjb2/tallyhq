@@ -1238,6 +1238,35 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         asyncio.create_task(_loop())
 
     @app.on_event("startup")
+    async def _apply_cursor_overrides():
+        """One-shot cursor override applied at boot.
+
+        Set RESET_CURSORS env to "name1=value1,name2=value2" to force adapter
+        cursors to specific values on next boot. Useful after fixing an adapter
+        that walked its cursor past good data. Unset the var after the deploy
+        completes so subsequent restarts don't keep re-applying.
+        """
+        import logging as _logging
+        import os as _os
+        spec = _os.environ.get("RESET_CURSORS", "").strip()
+        if not spec:
+            return
+        _log = _logging.getLogger("conductor.cursor-reset")
+        store = get_store()
+        try:
+            for pair in spec.split(","):
+                pair = pair.strip()
+                if not pair or "=" not in pair:
+                    continue
+                name, value = pair.split("=", 1)
+                store.set_cursor(name.strip(), value.strip())
+                _log.info("cursor reset: %s -> %s", name.strip(), value.strip())
+        except Exception as e:
+            _log.error("cursor reset failed: %s", e)
+        finally:
+            store.close()
+
+    @app.on_event("startup")
     async def _warm_photos():
         # Load DB-persisted cache into memory first (instant), then probe any
         # bioguides not yet cached (background, non-blocking).
