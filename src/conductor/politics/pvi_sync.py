@@ -75,6 +75,8 @@ STATE_NAME_TO_CODE = {
 
 
 def ensure_schema(store: Store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(PVI_SCHEMA_SQL)
 
 

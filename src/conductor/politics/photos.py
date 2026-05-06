@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS photo_cache (
 
 
 def ensure_schema(store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(PHOTO_CACHE_SCHEMA_SQL)
 
 

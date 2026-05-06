@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS legislator_social (
 
 
 def ensure_schema(store: Store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(SCHEMA_SQL)
 
 

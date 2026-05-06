@@ -524,7 +524,55 @@ def _table_exists(store: Store, name: str) -> bool:
         return False
 
 
+def _bootstrap_all_schemas(db_path: Path | None) -> None:
+    """Run every module's ensure_schema() once with a R/W Store, before web
+    starts serving traffic.
+
+    Web request handlers run with read_only=True Store connections (so they
+    coexist with the daily-update file-copy step). Read-only connections
+    cannot execute CREATE statements — every defensive `ensure_schema(store)`
+    call site that historically lazy-created tables now blows up.
+
+    Solution: bootstrap every schema once here, while we still hold a R/W
+    handle. After this returns, all expected tables exist and read-only
+    queries Just Work.
+
+    Idempotent: every ensure_schema uses CREATE TABLE IF NOT EXISTS.
+    """
+    import logging as _logging
+    _log = _logging.getLogger("conductor.bootstrap")
+    store = Store(db_path) if db_path else Store()
+    try:
+        from conductor.politics import (
+            bills as bm,
+            bill_summary as bsm,
+            bill_text as btm,
+            committees_sync as cm,
+            entities as em,
+            funding as fm,
+            legislators_social_sync as lssm,
+            lobbying as lobm,
+            photos as phm,
+            pvi_sync as pvm,
+        )
+        for mod_name, mod in [
+            ("entities", em), ("bills", bm), ("committees", cm),
+            ("funding", fm), ("legislators-social", lssm),
+            ("lobbying", lobm), ("photos", phm), ("pvi", pvm),
+            ("bill-summary", bsm), ("bill-text", btm),
+        ]:
+            try:
+                mod.ensure_schema(store)
+            except Exception as e:
+                _log.error("bootstrap %s schema: %s", mod_name, e)
+    finally:
+        store.close()
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
+    # Pre-bootstrap all schemas while a R/W Store is briefly held.
+    # Required before any read-only request connection touches the DB.
+    _bootstrap_all_schemas(db_path)
     app = FastAPI(title="TallyHQ", docs_url="/docs")
     env = _env()
     if STATIC_DIR.exists():

@@ -51,6 +51,8 @@ CREATE INDEX IF NOT EXISTS idx_committees_chamber ON committees (chamber);
 
 
 def ensure_schema(store: Store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(COMMITTEES_SCHEMA_SQL)
 
 

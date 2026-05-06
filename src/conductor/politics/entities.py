@@ -52,6 +52,8 @@ class FederalEntity:
 
 
 def ensure_schema(store: Store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(LEGISLATORS_SCHEMA_SQL)
 
 

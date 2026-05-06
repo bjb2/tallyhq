@@ -53,6 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_bill_summaries_bill ON bill_summaries(bill_id);
 
 
 def ensure_schema(store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(BILL_SUMMARIES_SCHEMA_SQL)
 
 

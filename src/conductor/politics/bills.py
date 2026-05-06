@@ -58,6 +58,8 @@ class Bill:
 
 
 def ensure_schema(store: Store) -> None:
+    if getattr(store, "read_only", False):
+        return
     store.conn.execute(BILLS_SCHEMA_SQL)
 
 
