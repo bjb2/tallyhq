@@ -28,7 +28,8 @@ from conductor.politics import (
     committees_sync as committees_mod,
     entities, funding as funding_mod, landing as landing_mod,
     legislators_social_sync as social_mod,
-    lobby_views, photos as photos_mod, rollcall_views, stats as stats_mod,
+    lobby_views, photos as photos_mod, pvi_sync as pvi_mod,
+    rollcall_views, stats as stats_mod,
 )
 from conductor.politics.photos import photo_url
 from conductor.politics.render_grid import render_svg
@@ -687,6 +688,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             stats = stats_mod.compute(store, ent.entity_id)
             committees = committees_mod.member_committees(store, ent.bioguide_id)
             role = committees_mod.leadership_roles(store, [ent.bioguide_id]).get(ent.bioguide_id)
+            pvi = pvi_mod.for_member(store, ent.state, ent.district, ent.chamber)
             funding_rows = funding_mod.for_member(store, ent.bioguide_id)
             social = social_mod.get(store, ent.bioguide_id)
 
@@ -717,6 +719,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             stats=stats,
             committees=committees,
             role=role,
+            pvi=pvi,
             funding=funding_rows,
             social=social,
             recent=recent,

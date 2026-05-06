@@ -17,6 +17,7 @@ dependencies = [
     "pytz",                 # DuckDB requires pytz for AT TIME ZONE / TIMESTAMPTZ arithmetic
     "tzdata",               # IANA tz database (Python's zoneinfo on slim Linux images)
     "openai>=1.50",         # OpenAI SDK pointed at OpenRouter for LLM summaries
+    "beautifulsoup4>=4.12",  # Wikipedia table parsing for PVI sync
 ]
 
 [project.optional-dependencies]

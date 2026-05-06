@@ -509,8 +509,14 @@ def cmd_politics_daily_update(args, store: Store) -> int:
         from conductor.politics import legislators_sync as ls
         from conductor.politics import committees_sync as cs
         from conductor.politics import legislators_social_sync as lss
+        from conductor.politics import pvi_sync as ps
         ls.sync(store)
         cs.sync(store)
+        try:
+            n_pvi = ps.sync(store)
+            print(f"[daily] pvi_sync: {n_pvi} rows", flush=True)
+        except Exception as e:
+            print(f"[daily] pvi_sync: ERROR {e}", file=sys.stderr, flush=True)
         try:
             n_social = lss.sync(store)
             print(f"[daily] legislators-social-sync: {n_social} rows", flush=True)
@@ -576,6 +582,13 @@ def cmd_politics_sync_committees(args, store: Store) -> int:
     from conductor.politics import committees_sync as cs
     n = cs.sync(store)
     print(f"committee assignments synced: {n} rows")
+    return 0
+
+
+def cmd_politics_sync_pvi(args, store: Store) -> int:
+    from conductor.politics import pvi_sync as ps
+    n = ps.sync(store, congress=args.congress)
+    print(f"district_pvi rows synced: {n} (congress {args.congress})")
     return 0
 
 
@@ -835,6 +848,14 @@ def build_parser() -> argparse.ArgumentParser:
                        help="include past committee assignments, not just current")
     pp_sc.add_argument("--concurrency", type=int, default=8)
     pp_sc.set_defaults(func=cmd_politics_sync_committees)
+
+    pp_pvi = psub.add_parser(
+        "sync-pvi",
+        help="sync Cook PVI per district + state from Wikipedia",
+    )
+    pp_pvi.add_argument("--congress", type=int, default=119,
+                        help="Congress number to associate rows with (default: 119)")
+    pp_pvi.set_defaults(func=cmd_politics_sync_pvi)
 
     pp_ss = psub.add_parser(
         "sync-legislators-social",

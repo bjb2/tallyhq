@@ -125,6 +125,39 @@
   .meta-list a { color: var(--fg-muted); }
   .meta-list a:hover { color: var(--accent); }
 
+  .pvi-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--bg-elev-2);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .pvi-strip .pvi-label {
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .pvi-strip .pvi-pill {
+    font-family: var(--mono);
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 13px;
+  }
+  .pvi-strip .pvi-pill.pvi-r    { background: #be323c; }
+  .pvi-strip .pvi-pill.pvi-d    { background: #285aa5; }
+  .pvi-strip .pvi-pill.pvi-even { background: var(--fg-muted); }
+  .pvi-strip .pvi-source {
+    color: var(--fg-faint);
+    font-size: 11px;
+    margin-left: auto;
+  }
+
   /* Tabs */
   .tabs {
     display: flex;
@@ -261,6 +294,15 @@
       {{ entity.chamber|title }}{% if entity.district is not none and entity.district != 0 %} {{ entity.state }}-{{ '%02d'|format(entity.district) }}{% else %} {{ entity.state }}{% endif %}
       <span class="badge {{ p }}" style="margin-left: 4px;">{{ p }}</span>
     </div>
+
+    {% if pvi %}
+    <div class="pvi-strip"
+         title="Cook Partisan Voting Index — how this {{ 'state' if entity.chamber == 'senate' else 'district' }} voted in recent presidential elections, vs the national average">
+      <span class="pvi-label">{{ 'State' if entity.chamber == 'senate' else 'District' }} lean</span>
+      <span class="pvi-pill {% if pvi.score > 0 %}pvi-r{% elif pvi.score < 0 %}pvi-d{% else %}pvi-even{% endif %}">{{ pvi.pvi }}</span>
+      <span class="pvi-source">Cook PVI · {{ pvi.source }}</span>
+    </div>
+    {% endif %}
 
     <div class="meta-list">
       <div>
