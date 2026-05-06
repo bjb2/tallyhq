@@ -1759,7 +1759,10 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if not spec:
             return
         _log = _logging.getLogger("conductor.cursor-reset")
-        store = get_store()
+        # R/W explicit — get_store() is read-only (web request mode).
+        # Runs before any boot-hook subprocess opens the snapshot, so this
+        # write lands on main and the daily-update copy sees the new value.
+        store = Store(db_path) if db_path else Store()
         try:
             for pair in spec.split(","):
                 pair = pair.strip()
