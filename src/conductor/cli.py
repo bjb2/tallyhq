@@ -620,7 +620,7 @@ def _run_daily_update(args, store: Store) -> int:
         "congress_amendments",        # api.congress.gov, requires key
         "congress_bill_actions",      # depends on bills already in DB
         "govinfo_crec",               # floor speeches, no key
-        "congress_bill_summaries",    # CRS summaries (skip-if-current SQL filter)
+        "congress_bill_summaries",    # CRS summaries — fromDateTime delta against /v3/summaries
     ]
     # govinfo_bill_text removed from the default daily cycle: its FS cursor
     # lives at $BILL_TEXT_ROOT/.cursors.json (container-ephemeral by default

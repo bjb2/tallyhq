@@ -1,27 +1,27 @@
 """api.congress.gov bill summaries adapter.
 
 CRS (Congressional Research Service) writes neutral, nonpartisan summaries
-of bills as they progress through stages. We pull them per-bill and store in
-`bill_summaries` for display under each bill's text version.
+of bills as they progress through stages. We pull the global summaries feed
+filtered by `fromDateTime` so each run only sees what changed upstream since
+the last cursor, regardless of how many bills exist.
 
-Endpoint: GET /v3/bill/{congress}/{billType}/{billNumber}/summaries
+Endpoint: GET /v3/summaries?fromDateTime=<ISO>&sort=updateDate+asc
 
 Each entry has:
+  - bill           ({congress, type, number, ...})
   - actionDate     (when this summary version applies)
   - actionDesc     ("Introduced in House", "Reported to House", ...)
   - text           (HTML — strip to plain text)
   - versionCode    (matches our text version_code, e.g. "ih", "rh")
-  - updateDate
+  - updateDate     (drives the cursor)
 
-We map versionCode → bill text's version_code so the changelog UI can show
-the CRS summary alongside the matching diff.
+Cold-start cursor: 2026-05-02T00:00:00Z. The seed DB shipped via
+GitHub Release contains every prior summary, so the live adapter only
+needs to chase the delta from that floor forward.
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-import re
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
@@ -35,8 +35,8 @@ from conductor.secrets import require
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.congress.gov/v3"
-PER_BILL_SLEEP = 0.05   # rate-limit hygiene
-MAX_BILLS_PER_PULL = 50_000  # uncapped in practice; ~15k bills/Congress total
+PAGE_LIMIT = 250                       # api.congress.gov hard cap
+COLD_START_FLOOR = datetime(2026, 5, 2, tzinfo=timezone.utc)
 
 BILL_SUMMARIES_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS bill_summaries (
@@ -79,85 +79,125 @@ class CongressBillSummariesAdapter(Adapter):
         r.raise_for_status()
         return r.json()
 
+    def _cursor_dt(self) -> datetime:
+        raw = self.store.get_cursor(self.name)
+        if raw:
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                pass
+        return COLD_START_FLOOR
+
+    def _set_cursor_dt(self, dt: datetime) -> None:
+        self.store.set_cursor(self.name, dt.astimezone(timezone.utc).isoformat())
+
     async def pull(self) -> AsyncIterator[Event]:
         ensure_schema(self.store)
 
-        # Skip bills whose latest stored summary is newer than the bill's own
-        # `updated_at` — no upstream change since we last fetched, so no work.
-        # First-time runs hit every bill (no rows in bill_summaries yet).
-        bills = self.store.conn.execute(
-            """
-            SELECT b.bill_id, b.congress, b.bill_type, b.number, b.latest_action_date
-            FROM bills b
-            LEFT JOIN (
-                SELECT bill_id, MAX(update_date) AS last_seen
-                FROM bill_summaries
-                GROUP BY bill_id
-            ) s ON s.bill_id = b.bill_id
-            WHERE s.last_seen IS NULL
-               OR s.last_seen < b.updated_at
-            ORDER BY COALESCE(b.latest_action_date, b.introduced_date) DESC NULLS LAST
-            LIMIT ?
-            """,
-            [MAX_BILLS_PER_PULL],
-        ).fetchall()
+        cursor = self._cursor_dt()
+        from_str = cursor.strftime("%Y-%m-%dT%H:%M:%SZ")
+        logger.info("[%s] starting — fromDateTime=%s", self.name, from_str)
 
-        logger.info("[%s] starting — %d bills in queue", self.name, len(bills))
+        offset = 0
         upserted_total = 0
-        for i, (bill_id, congress, bill_type, number, latest_action) in enumerate(bills):
-            try:
-                upserted = await self._pull_one(bill_id, congress, bill_type, number)
-            except httpx.HTTPError as e:
-                logger.warning("[%s] %s: HTTP %s", self.name, bill_id, e)
-                continue
-            upserted_total += upserted
-            if (i + 1) % 100 == 0:
-                logger.info("[%s] progress %d/%d — upserted=%d",
-                            self.name, i + 1, len(bills), upserted_total)
-            await asyncio.sleep(PER_BILL_SLEEP)
+        max_seen = cursor
+        # Bound the walk so a runaway / clock-skew page loop can't peg the
+        # API. Daily delta should fit in a handful of pages.
+        MAX_PAGES = 200
 
-        logger.info("[%s] DONE — upserted %d summary rows", self.name, upserted_total)
+        for _page in range(MAX_PAGES):
+            try:
+                data = await self._get_json(
+                    "/summaries",
+                    params={
+                        "fromDateTime": from_str,
+                        "sort": "updateDate asc",
+                        "limit": PAGE_LIMIT,
+                        "offset": offset,
+                    },
+                )
+            except httpx.HTTPError as e:
+                logger.warning("[%s] page offset=%d: HTTP %s", self.name, offset, e)
+                break
+
+            items = data.get("summaries") or []
+            if not items:
+                break
+
+            page_upserted = 0
+            page_max: datetime | None = None
+            for s in items:
+                bill = s.get("bill") or {}
+                congress = bill.get("congress")
+                bill_type = (bill.get("type") or "").lower()
+                number = bill.get("number")
+                if not (congress and bill_type and number):
+                    continue
+                bill_id = f"{congress}:{bill_type}:{number}"
+
+                version_code = (s.get("versionCode") or "").lower()
+                action_date = _parse_date(s.get("actionDate"))
+                text_html = s.get("text") or ""
+                if not (version_code and action_date and text_html):
+                    continue
+                text = "\n".join(clean_html_to_lines(text_html)).strip()
+                if not text:
+                    continue
+
+                update_dt = _parse_dt(s.get("updateDate"))
+                self.store.conn.execute(
+                    """
+                    INSERT INTO bill_summaries
+                        (bill_id, version_code, action_desc, action_date, summary_text, update_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (bill_id, version_code, action_date) DO UPDATE SET
+                        action_desc  = excluded.action_desc,
+                        summary_text = excluded.summary_text,
+                        update_date  = excluded.update_date
+                    """,
+                    [
+                        bill_id,
+                        version_code,
+                        s.get("actionDesc") or "",
+                        action_date,
+                        text,
+                        update_dt,
+                    ],
+                )
+                page_upserted += 1
+                if update_dt is not None and (page_max is None or update_dt > page_max):
+                    page_max = update_dt
+
+            upserted_total += page_upserted
+
+            # Advance cursor per page so a kill is bounded to one page.
+            # Re-fetch from the same boundary on resume is safe — UPSERT
+            # handles overlap.
+            if page_max is not None and page_max > max_seen:
+                max_seen = page_max
+                self._set_cursor_dt(max_seen)
+
+            logger.info(
+                "[%s] page offset=%d items=%d upserted=%d cursor=%s",
+                self.name, offset, len(items), page_upserted,
+                max_seen.isoformat(),
+            )
+
+            if len(items) < PAGE_LIMIT:
+                break
+            offset += PAGE_LIMIT
+        else:
+            logger.warning("[%s] hit MAX_PAGES=%d; cursor=%s — investigate",
+                           self.name, MAX_PAGES, max_seen.isoformat())
+
+        logger.info("[%s] DONE — upserted %d summary rows; cursor=%s",
+                    self.name, upserted_total, max_seen.isoformat())
 
         if False:
             yield  # pragma: no cover
-
-    async def _pull_one(self, bill_id: str, congress, bill_type, number) -> int:
-        data = await self._get_json(
-            f"/bill/{congress}/{bill_type}/{number}/summaries"
-        )
-        summaries = data.get("summaries") or []
-        upserted = 0
-        for s in summaries:
-            version_code = (s.get("versionCode") or "").lower()
-            action_date = _parse_date(s.get("actionDate"))
-            text_html = s.get("text") or ""
-            if not (version_code and action_date and text_html):
-                continue
-            lines = clean_html_to_lines(text_html)
-            text = "\n".join(lines).strip()
-            if not text:
-                continue
-            self.store.conn.execute(
-                """
-                INSERT INTO bill_summaries
-                    (bill_id, version_code, action_desc, action_date, summary_text, update_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT (bill_id, version_code, action_date) DO UPDATE SET
-                    action_desc  = excluded.action_desc,
-                    summary_text = excluded.summary_text,
-                    update_date  = excluded.update_date
-                """,
-                [
-                    bill_id,
-                    version_code,
-                    s.get("actionDesc") or "",
-                    action_date,
-                    text,
-                    _parse_dt(s.get("updateDate")),
-                ],
-            )
-            upserted += 1
-        return upserted
 
 
 def _parse_date(s: str | None):
