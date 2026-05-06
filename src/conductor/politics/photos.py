@@ -47,15 +47,24 @@ def ensure_schema(store) -> None:
 
 
 def _db_load_into_memory(store) -> int:
-    """Populate the in-memory cache from the DB table on startup."""
+    """Populate the in-memory cache from the DB table on startup.
+
+    Skip rows where `url IS NULL` (recorded placeholders). When a legislator
+    first appeared without a photo, we persisted a placeholder row so future
+    requests would short-circuit. That broke when those legislators later
+    got photos in unitedstates/images: the cache row stuck the bioguide on
+    PLACEHOLDER forever, and warm_cache skipped re-checking because the
+    in-memory cache was hot. Skipping placeholder rows on load lets
+    warm_cache (or the next request's resolve()) probe the network again.
+    """
     ensure_schema(store)
     rows = store.conn.execute(
-        "SELECT bioguide_id, size, url FROM photo_cache"
+        "SELECT bioguide_id, size, url FROM photo_cache WHERE url IS NOT NULL"
     ).fetchall()
     n = 0
     with _lock:
         for bg, sz, url in rows:
-            _resolved[(bg, sz)] = url if url else PLACEHOLDER
+            _resolved[(bg, sz)] = url
             n += 1
     return n
 
