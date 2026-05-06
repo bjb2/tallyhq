@@ -1394,6 +1394,40 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             store.close()
 
     @app.on_event("startup")
+    async def _bootstrap_pvi():
+        """Auto-sync Cook PVI on boot if the table is empty.
+
+        This is the only path to populate Cook PVI on a Railway deploy
+        (railway run can't reach the volume-mounted DuckDB). After the
+        first successful sync the row count is non-zero and this is a
+        no-op until the Monday weekly refresh in daily-update kicks in.
+        """
+        import asyncio
+        import logging as _logging
+        _log = _logging.getLogger("conductor.pvi-bootstrap")
+
+        async def _bg():
+            try:
+                from conductor.politics import pvi_sync as ps
+                store = get_store()
+                try:
+                    ps.ensure_schema(store)
+                    n = store.conn.execute(
+                        "SELECT COUNT(*) FROM district_pvi"
+                    ).fetchone()[0]
+                    if n > 0:
+                        _log.info("pvi: table has %d rows, skipping bootstrap", n)
+                        return
+                    written = ps.sync(store)
+                    _log.info("pvi: bootstrap sync wrote %d rows", written)
+                finally:
+                    store.close()
+            except Exception as e:
+                _log.error("pvi bootstrap failed: %s", e)
+
+        asyncio.create_task(_bg())
+
+    @app.on_event("startup")
     async def _apply_cursor_overrides():
         """One-shot cursor override applied at boot.
 
