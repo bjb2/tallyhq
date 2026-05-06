@@ -15,6 +15,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -500,14 +503,78 @@ def _day_payload(store: Store, day: str, *, entity_filter: str | None, limit: in
     })
 
 
+def _client_ip(request: Request) -> str:
+    """Extract real client IP behind Railway/Cloudflare. X-Forwarded-For
+    is a comma list; the first entry is the original client. Fall back
+    to slowapi's stock resolver when the header is absent (local dev)."""
+    fwd = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return get_remote_address(request)
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="TallyHQ", docs_url="/docs")
     env = _env()
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    # --- Rate limiting (per-IP) ----------------------------------------
+    # slowapi attaches itself to app.state and uses the @limiter.limit
+    # decorator on individual endpoints. RateLimitExceeded -> 429 JSON.
+    limiter = Limiter(key_func=_client_ip)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # --- Security headers ----------------------------------------------
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        response = await call_next(request)
+        # HSTS only meaningful on HTTPS; Railway terminates TLS so safe.
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=()",
+        )
+        # CSP allows: Google Fonts (CSS+WOFF), GitHub-hosted member photos,
+        # api.congress.gov photo fallback, inline <style>+<script>+style="..."
+        # already present in templates. frame-ancestors 'none' makes
+        # X-Frame-Options redundant on modern browsers but both for legacy.
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            (
+                "default-src 'self'; "
+                "img-src 'self' data: https://raw.githubusercontent.com https://api.congress.gov; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "script-src 'self' 'unsafe-inline'; "
+                "connect-src 'self'; "
+                "base-uri 'self'; "
+                "form-action 'self'; "
+                "frame-ancestors 'none';"
+            ),
+        )
+        return response
+
     def get_store() -> Store:
-        return Store(db_path) if db_path else Store()
+        store = Store(db_path) if db_path else Store()
+        # Cap any single web-request query at 10s. Daily-update / CLI
+        # paths use Store directly (not via this helper) so long-running
+        # ingest jobs are unaffected. DuckDB raises on exceeded timeout;
+        # FastAPI returns 500 — preferable to a worker hang.
+        try:
+            store.conn.execute("SET statement_timeout = '10s'")
+        except Exception:
+            # Older DuckDB builds without statement_timeout — soft-fail
+            # so the request still serves; production version is >=1.0.
+            pass
+        return store
 
     own_host = os.environ.get("ANALYTICS_OWN_HOST", "tallyhq.org")
 
@@ -1175,7 +1242,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return tmpl.render(profile=profile, bills=bills, registrants=registrants)
 
     @app.get("/api/search")
-    def api_search(q: str = Query("", max_length=80), limit: int = Query(8, ge=1, le=20)):
+    @limiter.limit("30/minute")
+    def api_search(
+        request: Request,
+        q: str = Query("", max_length=80),
+        limit: int = Query(8, ge=1, le=20),
+    ):
         """Combined autocomplete — members + bills.
 
         Members: substring match on full_name OR last_name OR state.

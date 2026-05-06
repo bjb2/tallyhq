@@ -18,6 +18,7 @@ dependencies = [
     "tzdata",               # IANA tz database (Python's zoneinfo on slim Linux images)
     "openai>=1.50",         # OpenAI SDK pointed at OpenRouter for LLM summaries
     "beautifulsoup4>=4.12",  # Wikipedia table parsing for PVI sync
+    "slowapi>=0.1.9",        # Per-IP rate limiting on /api/search
 ]
 
 [project.optional-dependencies]
