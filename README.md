@@ -12,10 +12,12 @@ Every roll-call vote, every bill introduced, every party-line break, every floor
 
 - **Per-legislator activity grid** (GitHub-contribution-style 7×N heatmap) over the past year
 - **Roll-call detail pages** with party-by-party tallies and break-vote highlighting
-- **Bill detail pages** with sponsor, cosponsors, action timeline (stage-coded), text-version downloads
+- **Bill detail pages** with sponsor, cosponsors, action timeline (stage-coded), text-version downloads, and an aggregate Cook PVI "cosponsor lean" stat
 - **Bills index** searchable by title, filterable by chamber + type + policy area
-- **Browse** members with committee/subcommittee filtering and live aggregate stats for the selection
+- **Browse** members with committee/subcommittee filtering, live aggregate stats, and a PVI pill per card
 - **Landing dashboard** — congressional pulse heatmap, top-active / most-absent / biggest-party-breakers rankings, recent break-votes timeline
+- **Committee leadership rings** — gold ring around chairs, silver around ranking members, on every sponsor/cosponsor/legislator portrait
+- **Cook PVI lean** per district + state, surfaced on legislator profiles, browse cards, and bill sponsor cards
 
 ## Architecture
 
@@ -34,6 +36,7 @@ Single Python service (FastAPI + Jinja templates) with a single embedded DuckDB 
 | `api.open.fec.gov` | Campaign finance totals | ✓ | yes |
 | `unitedstates/congress-legislators` (YAML) | Member roster + committee assignments + ID crosswalks | ✓ | no |
 | `unitedstates/images` (gh-pages) | Member portraits | ✓ | no |
+| `en.wikipedia.org` (Cook PVI article) | Cook Partisan Voting Index per district + state | ✓ | no |
 
 ## Quick start (local)
 
@@ -43,6 +46,7 @@ pip install -e .
 # 1. Seed entity tables
 conductor politics sync-legislators
 conductor politics sync-committees
+conductor politics sync-pvi          # Cook PVI per district + state
 
 # 2. Pull events
 conductor politics bulk-bills --congress 119 --bill-types all   # ~30 min
