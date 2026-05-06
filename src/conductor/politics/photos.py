@@ -89,8 +89,19 @@ def static_unitedstates_url(bioguide_id: str, size: str = "225x275") -> str:
 
 
 def photo_url(bioguide_id: str, size: str = "225x275") -> str:
-    """Template helper — renders to /photo/{bioguide} which the web app resolves."""
-    return f"/photo/{bioguide_id}?size={size}"
+    """Template helper — emits the direct static URL for the member's photo.
+
+    Was `/photo/{bioguide}?size=...` which 302-redirected. The redirect was
+    cached by browsers with max-age=86400, so when the redirect target
+    rotated (e.g. when we moved photos from runtime 3rd-party fetches to
+    repo-static files), users kept following the cached old 302 to a
+    now-404 URL for up to 24h.
+
+    Direct static URL bypasses that cache entirely. The `/photo/...`
+    endpoint still exists as a fallback (returns placeholder SVG when
+    file absent), but we no longer route template traffic through it.
+    """
+    return f"/static/photos/{bioguide_id}.jpg"
 
 
 def _check_unitedstates_sync(bioguide_id: str, size: str) -> Optional[str]:
