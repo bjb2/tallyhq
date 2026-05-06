@@ -300,7 +300,7 @@
          title="Cook Partisan Voting Index — how this {{ 'state' if entity.chamber == 'senate' else 'district' }} voted in recent presidential elections, vs the national average">
       <span class="pvi-label">{{ 'State' if entity.chamber == 'senate' else 'District' }} lean</span>
       <span class="pvi-pill {% if pvi.score > 0 %}pvi-r{% elif pvi.score < 0 %}pvi-d{% else %}pvi-even{% endif %}">{{ pvi.pvi }}</span>
-      <span class="pvi-source">Cook PVI · {{ pvi.source }}</span>
+      <span class="pvi-source">Cook PVI</span>
     </div>
     {% endif %}
 

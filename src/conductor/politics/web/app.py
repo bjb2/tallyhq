@@ -646,6 +646,15 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
             agg = _aggregate_stats(store, [r.bioguide_id for r in roster])
             committees_list = _committee_options(store)
+            pvi_lookup = pvi_mod.bulk_for_members(
+                store, [(r.state, r.district, r.chamber) for r in roster]
+            )
+            pvi_by_bg: dict[str, dict] = {}
+            for r in roster:
+                key = (r.state, int(r.district) if r.district is not None else 0, r.chamber.lower())
+                rec = pvi_lookup.get(key)
+                if rec is not None:
+                    pvi_by_bg[r.bioguide_id] = rec
         finally:
             store.close()
         tmpl = env.get_template("browse.html")
@@ -655,6 +664,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             committee=committee, committee_obj=committee_obj,
             committees_list=committees_list,
             agg=agg,
+            pvi_by_bg=pvi_by_bg,
             photo=lambda b: photo_url(b, "225x275"),
         )
 
@@ -975,6 +985,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                     tallies=tallies,
                     actions=[],
                     roles={},
+                    sponsor_pvi=None,
+                    cosponsor_pvis={},
+                    cosponsor_pvi_avg=None,
                     photo=lambda bg: photo_url(bg, "225x275"),
                     big_photo=lambda bg: photo_url(bg, "450x550"),
                 )
@@ -988,6 +1001,35 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 role_bgs.append(sponsor.bioguide_id)
             role_bgs.extend(c.entity.bioguide_id for c in cosponsors)
             roles = committees_mod.leadership_roles(store, role_bgs)
+            # PVI lookup for sponsor + every cosponsor (one DB query, in-memory join)
+            pvi_members: list[tuple[str, int | None, str]] = []
+            if sponsor:
+                pvi_members.append((sponsor.state, sponsor.district, sponsor.chamber))
+            for c in cosponsors:
+                pvi_members.append((c.entity.state, c.entity.district, c.entity.chamber))
+            pvi_lookup = pvi_mod.bulk_for_members(store, pvi_members)
+            sponsor_pvi = None
+            if sponsor:
+                key = (sponsor.state, int(sponsor.district) if sponsor.district is not None else 0, sponsor.chamber.lower())
+                sponsor_pvi = pvi_lookup.get(key)
+            cosponsor_pvis: dict[str, dict] = {}
+            cosponsor_scores: list[int] = []
+            for c in cosponsors:
+                key = (c.entity.state, int(c.entity.district) if c.entity.district is not None else 0, c.entity.chamber.lower())
+                rec = pvi_lookup.get(key)
+                if rec is not None:
+                    cosponsor_pvis[c.entity.bioguide_id] = rec
+                    cosponsor_scores.append(rec["score"])
+            cosponsor_pvi_avg = None
+            if cosponsor_scores:
+                avg = sum(cosponsor_scores) / len(cosponsor_scores)
+                cosponsor_pvi_avg = {
+                    "score": avg,
+                    "label": ("EVEN" if abs(avg) < 0.5
+                              else f"R+{int(round(avg))}" if avg > 0
+                              else f"D+{int(round(-avg))}"),
+                    "n": len(cosponsor_scores),
+                }
             lobby_clients = lobby_views.top_clients_for_bill(store, bill_id, limit=10)
             text_versions = _format_text_versions(b.text_versions)
             crs_summaries = _fetch_crs_summaries(store, bill_id)
@@ -1034,6 +1076,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             default_ai_summary=default_ai_summary,
             is_passed=is_passed,
             roles=roles,
+            sponsor_pvi=sponsor_pvi,
+            cosponsor_pvis=cosponsor_pvis,
+            cosponsor_pvi_avg=cosponsor_pvi_avg,
             photo=lambda bg: photo_url(bg, "225x275"),
             big_photo=lambda bg: photo_url(bg, "450x550"),
         )

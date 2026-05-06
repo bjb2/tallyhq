@@ -299,6 +299,38 @@ def sync(store: Store, congress: int = CURRENT_CONGRESS) -> int:
     return written
 
 
+def bulk_for_members(
+    store: Store,
+    members: list[tuple[str, int | None, str]],   # list of (state, district, chamber)
+    congress: int = CURRENT_CONGRESS,
+) -> dict[tuple[str, int, str], dict]:
+    """Resolve PVI for many legislators in one query. Returns a dict keyed
+    by (state, district_or_0, chamber_lower)."""
+    if not members:
+        return {}
+    ensure_schema(store)
+    rows = store.conn.execute(
+        "SELECT state, district, pvi, score, source FROM district_pvi WHERE congress = ?",
+        [congress],
+    ).fetchall()
+    by_key: dict[tuple[str, int], dict] = {}
+    for state, district, pvi, score, source in rows:
+        by_key[(state, int(district))] = {
+            "pvi": pvi, "score": int(score), "source": source,
+        }
+    out: dict[tuple[str, int, str], dict] = {}
+    for state, district, chamber in members:
+        chamber_low = (chamber or "").lower()
+        if chamber_low == "house":
+            d = int(district) if district is not None else 0
+        else:
+            d = STATE_LEVEL
+        rec = by_key.get((state, d))
+        if rec is not None:
+            out[(state, int(district) if district is not None else 0, chamber_low)] = rec
+    return out
+
+
 def for_member(
     store: Store,
     state: str,

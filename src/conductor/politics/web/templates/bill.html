@@ -171,6 +171,35 @@
   .role-badge.role-ranking    { background: #ececec; color: #444;    border: 1px solid #8a8a8a; }
   .role-badge.role-subchair   { background: #fbf3dd; color: #8a5a00; border: 1px solid #e6cf86; }
   .role-badge.role-subranking { background: #f3f3f3; color: #555;    border: 1px solid #c4c4c4; }
+
+  .pvi-pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    color: #fff;
+    margin-left: 6px;
+    vertical-align: 1px;
+  }
+  .pvi-pill.pvi-r    { background: #be323c; }
+  .pvi-pill.pvi-d    { background: #285aa5; }
+  .pvi-pill.pvi-even { background: var(--fg-muted); }
+  .cosp-grid .pvi-mini {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 0 4px;
+    border-radius: 2px;
+    color: #fff;
+    vertical-align: 1px;
+    margin-left: 2px;
+  }
+  .cosp-grid .pvi-mini.pvi-r    { background: #be323c; }
+  .cosp-grid .pvi-mini.pvi-d    { background: #285aa5; }
+  .cosp-grid .pvi-mini.pvi-even { background: var(--fg-muted); }
   .sponsor-card .info { min-width: 0; }
   .sponsor-card .label {
     color: var(--fg-muted);
@@ -346,6 +375,10 @@
             {{ sponsor.party }} ·
             {{ sponsor.chamber|title }} ·
             {{ sponsor.state }}{% if sponsor.district is not none and sponsor.district != 0 %}-{{ '%02d'|format(sponsor.district) }}{% endif %}
+            {% if sponsor_pvi %}
+            <span class="pvi-pill {% if sponsor_pvi.score > 0 %}pvi-r{% elif sponsor_pvi.score < 0 %}pvi-d{% else %}pvi-even{% endif %}"
+                  title="Cook PVI — how this {{ 'state' if sponsor.chamber == 'senate' else 'district' }} leans vs the national average">{{ sponsor_pvi.pvi }}</span>
+            {% endif %}
           </div>
           {% if sp_role %}
           <div class="role-badge role-{{ sp_role.role }}"
@@ -973,9 +1006,10 @@
         {% for c in cosponsors %}
           {% set p = c.entity.party[0] if c.entity.party else 'I' %}
           {% set cr = roles.get(c.entity.bioguide_id) if roles else None %}
-          <a href="/legislator/{{ c.entity.bioguide_id }}" title="{{ c.entity.full_name }} ({{ c.entity.state }}-{{ p }}){% if c.is_original %} · original cosponsor{% endif %}{% if cr %} · {{ cr.title }} of the {{ cr.committee_name }}{% if cr.is_subcommittee %} (subcommittee){% endif %}{% endif %}">
+          {% set cp = cosponsor_pvis.get(c.entity.bioguide_id) if cosponsor_pvis else None %}
+          <a href="/legislator/{{ c.entity.bioguide_id }}" title="{{ c.entity.full_name }} ({{ c.entity.state }}-{{ p }}){% if c.is_original %} · original cosponsor{% endif %}{% if cr %} · {{ cr.title }} of the {{ cr.committee_name }}{% if cr.is_subcommittee %} (subcommittee){% endif %}{% endif %}{% if cp %} · district lean {{ cp.pvi }}{% endif %}">
             <div class="ph{% if cr %} role-{{ cr.role }}{% endif %}" style="background-image: url('{{ photo(c.entity.bioguide_id) }}');"></div>
-            <div class="nm">{{ c.entity.last_name }} <span class="badge {{ p }}">{{ p }}</span></div>
+            <div class="nm">{{ c.entity.last_name }} <span class="badge {{ p }}">{{ p }}</span>{% if cp %}<span class="pvi-mini {% if cp.score > 0 %}pvi-r{% elif cp.score < 0 %}pvi-d{% else %}pvi-even{% endif %}">{{ cp.pvi }}</span>{% endif %}</div>
           </a>
         {% endfor %}
       </div>
@@ -992,6 +1026,15 @@
       <div class="row"><span class="l">Congress</span><span class="v">{{ bill.congress }}th</span></div>
       {% if bill.introduced_date %}<div class="row"><span class="l">Introduced</span><span class="v">{{ bill.introduced_date.isoformat() }}</span></div>{% endif %}
       <div class="row"><span class="l">Cosponsors</span><span class="v">{{ bill.cosponsor_count }}</span></div>
+      {% if cosponsor_pvi_avg and cosponsor_pvi_avg.n > 0 %}
+      <div class="row"
+           title="Average Cook PVI across cosponsors with resolvable district/state lean ({{ cosponsor_pvi_avg.n }} of {{ bill.cosponsor_count }})">
+        <span class="l">Cosponsor lean</span>
+        <span class="v">
+          <span class="pvi-pill {% if cosponsor_pvi_avg.score > 0.5 %}pvi-r{% elif cosponsor_pvi_avg.score < -0.5 %}pvi-d{% else %}pvi-even{% endif %}" style="margin-left: 0;">{{ cosponsor_pvi_avg.label }}</span>
+        </span>
+      </div>
+      {% endif %}
     </div>
 
     {% if bill.url %}

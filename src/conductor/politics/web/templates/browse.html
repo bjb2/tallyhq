@@ -65,7 +65,18 @@
     white-space: nowrap;
   }
   .leg-card .row2 { color: var(--fg-muted); font-size: 12px; margin-top: 4px; }
-  .leg-card .row3 { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+  .leg-card .row3 { margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .leg-card .pvi-pill {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: #fff;
+  }
+  .leg-card .pvi-pill.pvi-r    { background: #be323c; }
+  .leg-card .pvi-pill.pvi-d    { background: #285aa5; }
+  .leg-card .pvi-pill.pvi-even { background: var(--fg-muted); }
 
   .agg-panel {
     background: var(--bg-elev);
@@ -214,6 +225,11 @@
         </div>
         <div class="row3">
           <span class="badge {{ p }}">{{ p }}</span>
+          {% set rp = pvi_by_bg.get(r.bioguide_id) if pvi_by_bg else None %}
+          {% if rp %}
+          <span class="pvi-pill {% if rp.score > 0 %}pvi-r{% elif rp.score < 0 %}pvi-d{% else %}pvi-even{% endif %}"
+                title="Cook PVI — {{ 'state' if r.chamber == 'senate' else 'district' }} lean">{{ rp.pvi }}</span>
+          {% endif %}
           <span class="muted mono">{{ r.bioguide_id }}</span>
         </div>
       </div>
