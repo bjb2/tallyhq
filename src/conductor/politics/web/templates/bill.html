@@ -186,20 +186,6 @@
   .pvi-pill.pvi-r    { background: #be323c; }
   .pvi-pill.pvi-d    { background: #285aa5; }
   .pvi-pill.pvi-even { background: var(--fg-muted); }
-  .cosp-grid .pvi-mini {
-    display: inline-block;
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
-    padding: 0 4px;
-    border-radius: 2px;
-    color: #fff;
-    vertical-align: 1px;
-    margin-left: 2px;
-  }
-  .cosp-grid .pvi-mini.pvi-r    { background: #be323c; }
-  .cosp-grid .pvi-mini.pvi-d    { background: #285aa5; }
-  .cosp-grid .pvi-mini.pvi-even { background: var(--fg-muted); }
   .sponsor-card .info { min-width: 0; }
   .sponsor-card .label {
     color: var(--fg-muted);
@@ -1009,7 +995,7 @@
           {% set cp = cosponsor_pvis.get(c.entity.bioguide_id) if cosponsor_pvis else None %}
           <a href="/legislator/{{ c.entity.bioguide_id }}" title="{{ c.entity.full_name }} ({{ c.entity.state }}-{{ p }}){% if c.is_original %} · original cosponsor{% endif %}{% if cr %} · {{ cr.title }} of the {{ cr.committee_name }}{% if cr.is_subcommittee %} (subcommittee){% endif %}{% endif %}{% if cp %} · district lean {{ cp.pvi }}{% endif %}">
             <div class="ph{% if cr %} role-{{ cr.role }}{% endif %}" style="background-image: url('{{ photo(c.entity.bioguide_id) }}');"></div>
-            <div class="nm">{{ c.entity.last_name }} <span class="badge {{ p }}">{{ p }}</span>{% if cp %}<span class="pvi-mini {% if cp.score > 0 %}pvi-r{% elif cp.score < 0 %}pvi-d{% else %}pvi-even{% endif %}">{{ cp.pvi }}</span>{% endif %}</div>
+            <div class="nm">{{ c.entity.last_name }} <span class="badge {{ p }}">{{ p }}</span></div>
           </a>
         {% endfor %}
       </div>
