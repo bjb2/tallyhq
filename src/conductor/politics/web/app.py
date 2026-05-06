@@ -1404,6 +1404,44 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return tmpl.render(s=s, token=token, days=days,
                            include_bots=bool(include_bots))
 
+    async def _spawn_daily_update(extra_args: list[str] | None = None) -> int:
+        """Spawn `conductor politics daily-update` as a subprocess and stream
+        its stdout to our logger line-by-line. Returns the exit code.
+
+        Streaming (vs. proc.communicate()) is critical: subprocess output is
+        fully buffered until exit when communicate() is used, which made
+        20-min runs appear as a black hole in Railway logs. With this loop,
+        each `[daily] adapter: +N` line lands in logs in real time.
+        """
+        import asyncio
+        import logging as _logging
+        import sys as _sys
+
+        _log = _logging.getLogger("conductor.daily")
+        db_arg = str(db_path) if db_path else "/data/conductor.duckdb"
+        argv = [_sys.executable, "-m", "conductor.cli",
+                "--db", db_arg, "politics", "daily-update"]
+        if extra_args:
+            argv.extend(extra_args)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except Exception as e:
+            _log.error("daily-update spawn failed: %s", e)
+            return -1
+        assert proc.stdout is not None
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            _log.info("daily| %s", line.decode("utf-8", errors="replace").rstrip())
+        rc = await proc.wait()
+        _log.info("daily-update exited %s", rc)
+        return rc
+
     @app.on_event("startup")
     async def _schedule_daily_update():
         """In-process daily-update scheduler.
@@ -1412,8 +1450,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         When unset, this loop is a no-op — useful for local dev or when
         you've split cron into a separate Railway service.
 
-        Spawns the same logic as `conductor politics daily-update` as a
-        subprocess so the DuckDB lock isn't held by the web event loop.
+        Subprocess writes to a snapshot file and atomic-renames into place
+        when done, so this loop never holds the main DB's write lock.
         """
         import asyncio
         import logging as _logging
@@ -1443,21 +1481,61 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 _log.info("next daily-update in %.1fh at %s", wait_s / 3600, target.isoformat())
                 await asyncio.sleep(wait_s)
                 try:
-                    import sys as _sys
-                    db_arg = str(db_path) if db_path else "/data/conductor.duckdb"
-                    proc = await asyncio.create_subprocess_exec(
-                        _sys.executable, "-m", "conductor.cli",
-                        "--db", db_arg, "politics", "daily-update",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.STDOUT,
-                    )
-                    out, _ = await proc.communicate()
-                    _log.info("daily-update exited %s\n%s", proc.returncode,
-                              (out or b"").decode("utf-8", errors="replace")[:4000])
+                    await _spawn_daily_update()
                 except Exception as e:
-                    _log.error("daily-update spawn failed: %s", e)
+                    _log.error("daily-update loop iteration failed: %s", e)
 
         asyncio.create_task(_loop())
+
+    @app.on_event("startup")
+    async def _maybe_run_daily_update_on_boot():
+        """One-shot daily-update at boot, gated by DAILY_UPDATE_ON_BOOT env.
+
+        Values:
+          - "incremental" / "1" : run `politics daily-update`
+          - "full"              : run `politics daily-update --full` (Mon weekly branch)
+
+        A marker file at /data/.daily-on-boot-<hash>.applied prevents re-fire
+        across restarts. Bump the env value (or unset + reset) to fire again.
+        Useful for catching up missed weekly branches without waiting for the
+        scheduler's next 07:00 UTC tick.
+        """
+        import asyncio
+        import logging as _logging
+        import os as _os
+        from pathlib import Path as _Path
+
+        spec = _os.environ.get("DAILY_UPDATE_ON_BOOT", "").strip().lower()
+        if not spec:
+            return
+        _log = _logging.getLogger("conductor.daily")
+        marker_dir = (db_path.parent if db_path else _Path("/data"))
+        marker = marker_dir / f".daily-on-boot-{abs(hash(spec)) % (10**12)}.applied"
+        if marker.exists():
+            _log.info("DAILY_UPDATE_ON_BOOT=%s: marker present, skipping", spec)
+            return
+        if spec in ("full",):
+            extra = ["--full"]
+        elif spec in ("incremental", "1", "true", "yes"):
+            extra = []
+        else:
+            _log.warning("DAILY_UPDATE_ON_BOOT=%s: unknown value, skipping", spec)
+            return
+
+        async def _bg():
+            _log.info("DAILY_UPDATE_ON_BOOT=%s: firing once", spec)
+            rc = await _spawn_daily_update(extra)
+            if rc == 0:
+                try:
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(spec)
+                    _log.info("daily-on-boot marker written: %s", marker)
+                except Exception as e:
+                    _log.error("could not write daily-on-boot marker: %s", e)
+            else:
+                _log.error("daily-on-boot exited %s; marker NOT written (will retry next boot)", rc)
+
+        asyncio.create_task(_bg())
 
     @app.on_event("startup")
     async def _run_backfill_adapters():

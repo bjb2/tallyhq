@@ -30,8 +30,10 @@ logger = logging.getLogger(__name__)
 API_BASE = "https://api.congress.gov/v3"
 ACTIONS_LIMIT = 250
 
-# How many bills to refresh per pull. Sorted by latest_action_date DESC so we
-# always look at recently-active bills first.
+# Refresh actions only for bills with activity in the last N days. Stale bills
+# rarely get new actions; re-fetching them daily wastes API budget and stretches
+# the daily-update window. Hard cap as a safety net for cold-cache deploys.
+ACTIVE_WINDOW_DAYS = 7
 MAX_BILLS_PER_PULL = 200
 
 
@@ -76,10 +78,12 @@ class CongressBillActionsAdapter(Adapter):
             """
             SELECT bill_id, congress, bill_type, number
             FROM bills
+            WHERE COALESCE(latest_action_date, introduced_date)
+                  >= CURRENT_DATE - INTERVAL (?) DAY
             ORDER BY COALESCE(latest_action_date, introduced_date) DESC NULLS LAST
             LIMIT ?
             """,
-            [MAX_BILLS_PER_PULL],
+            [ACTIVE_WINDOW_DAYS, MAX_BILLS_PER_PULL],
         ).fetchall()
 
         for bill_id, congress, bill_type, number in rows:

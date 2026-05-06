@@ -489,13 +489,82 @@ def cmd_politics_bulk_bills(args, store: Store) -> int:
 
 
 def cmd_politics_daily_update(args, store: Store) -> int:
-    """Run every daily-cadence adapter against the main DB.
+    """Run every daily-cadence adapter, publishing via snapshot-swap.
 
-    Designed for a Railway cron service: short-lived process that pulls
-    incremental updates, exits 0. Web service shares the same DuckDB volume;
-    DuckDB process-lock means the web must NOT be writing concurrently.
-    For Railway, schedule this overnight when traffic is low.
+    Pattern:
+      1. Close the inherited Store handle (we will not write to main DB).
+      2. Copy `main.duckdb` → `main.duckdb.staging` (file-level, no lock).
+      3. Open Store on staging; run all adapters there.
+      4. On success, atomically rename staging → main. Web's per-request
+         connections see the new file on next open. No 503 window.
+
+    Failure modes:
+      - Crash mid-run: staging file orphaned; cleaned at next run start.
+        Cursors did not advance on main, so adapters resume cleanly.
+      - Adapter error: caught per-adapter (existing behavior); snapshot
+        publishes regardless so partial progress is preserved. Tomorrow's
+        run picks up where this one stopped.
+
+    Why not just write to main: web reads + adapter writes + analytics
+    middleware writes contend on DuckDB's per-file write lock. Snapshot
+    keeps writers off main entirely.
     """
+    import os
+    import shutil
+    from pathlib import Path as _Path
+
+    main_path = _Path(store.db_path).resolve()
+    store.close()  # release inherited R/W handle on main; we work on staging
+
+    if not main_path.exists():
+        # No main yet (fresh deploy with empty volume) — write directly.
+        # Once main exists, subsequent runs use snapshot path.
+        print(f"[daily] main DB missing at {main_path}; writing in-place", flush=True)
+        run_store = Store(main_path)
+        try:
+            return _run_daily_update(args, run_store)
+        finally:
+            run_store.close()
+
+    staging_path = main_path.with_name(main_path.name + ".staging")
+    staging_wal = main_path.with_name(staging_path.name + ".wal")
+    main_wal = main_path.with_name(main_path.name + ".wal")
+
+    # Drop any stale staging from a prior crashed run
+    for p in (staging_path, staging_wal):
+        if p.exists():
+            try:
+                p.unlink()
+            except OSError as e:
+                print(f"[daily] could not remove stale {p.name}: {e}", file=sys.stderr, flush=True)
+
+    print(f"[daily] snapshot: copying {main_path.name} -> {staging_path.name}", flush=True)
+    shutil.copy2(main_path, staging_path)
+    if main_wal.exists():
+        # Carry forward any uncheckpointed WAL state
+        shutil.copy2(main_wal, staging_wal)
+
+    staging_store = Store(staging_path)
+    try:
+        rc = _run_daily_update(args, staging_store)
+    finally:
+        staging_store.close()
+
+    print(f"[daily] publishing snapshot -> {main_path.name}", flush=True)
+    os.replace(staging_path, main_path)
+    if staging_wal.exists():
+        os.replace(staging_wal, main_wal)
+    elif main_wal.exists():
+        # Main's old WAL is no longer consistent with the new file
+        try:
+            main_wal.unlink()
+        except OSError:
+            pass
+    return rc
+
+
+def _run_daily_update(args, store: Store) -> int:
+    """Run every daily-cadence adapter against `store`."""
     import asyncio
     from conductor.adapters import registry
     from conductor.http import HttpClient
