@@ -609,6 +609,10 @@ def _run_daily_update(args, store: Store) -> int:
             print("[daily] funding_sync: complete", flush=True)
         except Exception as e:
             print(f"[daily] funding_sync: ERROR {e}", file=sys.stderr, flush=True)
+        # Photos: not a runtime task. Member portraits live in the repo at
+        # src/conductor/politics/web/static/photos/ and are refreshed at dev
+        # time via `politics sync-photos`, then committed. Web serves them
+        # via /static/photos/. No persistence concern, no API budget hit.
 
     daily_adapters = [
         "congress_rollcalls",         # House — fast, no key
@@ -616,9 +620,15 @@ def _run_daily_update(args, store: Store) -> int:
         "congress_amendments",        # api.congress.gov, requires key
         "congress_bill_actions",      # depends on bills already in DB
         "govinfo_crec",               # floor speeches, no key
-        "govinfo_bill_text",          # bill text → FS (incremental, cursor-aware)
         "congress_bill_summaries",    # CRS summaries (skip-if-current SQL filter)
     ]
+    # govinfo_bill_text removed from the default daily cycle: its FS cursor
+    # lives at $BILL_TEXT_ROOT/.cursors.json (container-ephemeral by default
+    # on Railway), so cold deploys walk thousands of packages and add 10-20
+    # minutes per run. Run on demand with `politics pull govinfo_bill_text`,
+    # or opt in with --with-bill-text.
+    if args.with_bill_text:
+        daily_adapters.append("govinfo_bill_text")
     if args.with_bills:
         daily_adapters.insert(2, "congress_bills")  # api-key, slow
     if args.with_lda:
@@ -640,16 +650,17 @@ def _run_daily_update(args, store: Store) -> int:
 
     asyncio.run(_run())
 
-    # Ingest any new bill_text from the FS tree into the DB. Cheap when the
-    # govinfo_bill_text pull above found 0 new packages (no-op walk).
-    try:
-        from conductor.politics import bill_text as bt_mod
-        inserted, skipped = bt_mod.ingest_from_fs(store, bt_mod.DEFAULT_TEXT_ROOT)
-        summary.append(f"ingest-bill-text: +{inserted}/skip {skipped}")
-        print(f"[daily] ingest-bill-text: inserted={inserted} skipped={skipped}", flush=True)
-    except Exception as e:
-        summary.append(f"ingest-bill-text: ERROR {type(e).__name__}")
-        print(f"[daily] ingest-bill-text: ERROR {e}", file=sys.stderr, flush=True)
+    # Ingest bill_text from FS only when --with-bill-text was set; otherwise
+    # the FS tree wasn't updated this run and the walk is wasted IO.
+    if args.with_bill_text:
+        try:
+            from conductor.politics import bill_text as bt_mod
+            inserted, skipped = bt_mod.ingest_from_fs(store, bt_mod.DEFAULT_TEXT_ROOT)
+            summary.append(f"ingest-bill-text: +{inserted}/skip {skipped}")
+            print(f"[daily] ingest-bill-text: inserted={inserted} skipped={skipped}", flush=True)
+        except Exception as e:
+            summary.append(f"ingest-bill-text: ERROR {type(e).__name__}")
+            print(f"[daily] ingest-bill-text: ERROR {e}", file=sys.stderr, flush=True)
 
     print("[daily] done — " + " · ".join(summary))
     return 0
@@ -691,6 +702,48 @@ def cmd_politics_ingest_bill_text(args, store: Store) -> int:
     inserted, skipped = bill_text_mod.ingest_from_fs(store, root, replace=args.replace)
     print(f"ingest-bill-text: inserted={inserted} skipped={skipped} root={root}")
     return 0
+
+
+def cmd_politics_sync_photos(args, store: Store) -> int:
+    """Download all member portraits to the repo's static photo store.
+
+    Pulls the full roster from `legislators-current.yaml` so we have
+    Wikipedia slugs (the local DB does not store them). Resolution chain
+    per member: unitedstates/images -> api.congress.gov -> Wikipedia.
+
+    Idempotent: skips files <30 days old unless --force. Run before
+    committing portraits to the repo.
+    """
+    import asyncio
+    import urllib.request
+    import yaml
+    from conductor.politics import photo_store as ps_mod
+
+    print("sync-photos: fetching legislators-current.yaml...", flush=True)
+    raw = urllib.request.urlopen(
+        "https://unitedstates.github.io/congress-legislators/legislators-current.yaml",
+        timeout=30,
+    ).read()
+    roster = yaml.safe_load(raw)
+    members: list[tuple[str, str]] = []
+    for l in roster:
+        bg = (l.get("id") or {}).get("bioguide")
+        if not bg:
+            continue
+        slug = (l.get("id") or {}).get("wikipedia") or (
+            l.get("name", {}).get("official_full") or ""
+        )
+        members.append((bg, slug))
+    print(f"sync-photos: {len(members)} members; root={ps_mod.default_root()}", flush=True)
+    counts = asyncio.run(
+        ps_mod.sync_all(members, ps_mod.default_root(),
+                        force=args.force, concurrency=args.concurrency)
+    )
+    miss = counts.pop("_missing_bioguides", []) if isinstance(counts.get("_missing_bioguides"), list) else []
+    print(f"sync-photos: {counts}")
+    if miss:
+        print(f"sync-photos: missing ({len(miss)}): {miss[:30]}{' ...' if len(miss) > 30 else ''}")
+    return 0 if not miss else 1
 
 
 def cmd_politics_summarize_passed(args, store: Store) -> int:
@@ -883,6 +936,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="include api.congress.gov bills pull (slow, requires key)")
     pp_du.add_argument("--with-lda", action="store_true",
                        help="include LDA pull (very slow without LDA_API_KEY)")
+    pp_du.add_argument("--with-bill-text", action="store_true",
+                       help="include govinfo bill-text walk (10-20 min on cold cursor)")
     pp_du.set_defaults(func=cmd_politics_daily_update)
 
     pp_sf = psub.add_parser(
@@ -939,6 +994,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="sync social-media handles from @unitedstates/congress-legislators",
     )
     pp_ss.set_defaults(func=cmd_politics_sync_social)
+
+    pp_ph = psub.add_parser(
+        "sync-photos",
+        help="download member portraits to the local photo store",
+    )
+    pp_ph.add_argument("--force", action="store_true",
+                       help="re-download even if file exists and is fresh")
+    pp_ph.add_argument("--concurrency", type=int, default=8,
+                       help="parallel HTTP fetches (default: 8)")
+    pp_ph.set_defaults(func=cmd_politics_sync_photos)
 
     return parser
 
