@@ -1452,20 +1452,35 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             store.close()
         return JSONResponse({"members": members, "bills": bills, "q": q})
 
+    PHOTO_STATIC_DIR = STATIC_DIR / "photos"
+
     @app.get("/photo/{bioguide}")
     def photo(bioguide: str, size: str = "225x275"):
-        if size not in ("original", "450x550", "225x275"):
-            size = "225x275"
-        url = photos_mod.resolve(bioguide, size)
-        if url == photos_mod.PLACEHOLDER:
+        # Validate bioguide to avoid path traversal — must look like A000123.
+        if not (bioguide and len(bioguide) <= 8 and bioguide[0].isalpha()
+                and bioguide[1:].isalnum()):
             return Response(
-                content=PLACEHOLDER_SVG,
-                media_type="image/svg+xml",
+                content=PLACEHOLDER_SVG, media_type="image/svg+xml",
                 headers={"Cache-Control": "public, max-age=86400"},
             )
-        return RedirectResponse(
-            url=url,
-            status_code=302,
+        # Photos are committed to the repo at static/photos/{bioguide}.jpg.
+        # Refresh = `politics sync-photos` then commit + push. No runtime
+        # 3rd-party calls, no /data dependency. /static is mounted above
+        # (StaticFiles) and served with edge-CDN caching by Railway, so a
+        # bare 302 to /static/photos/{bg}.jpg keeps the response cheap.
+        path = PHOTO_STATIC_DIR / f"{bioguide}.jpg"
+        if path.exists():
+            return RedirectResponse(
+                url=f"/static/photos/{bioguide}.jpg",
+                status_code=302,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        # Fall back to placeholder SVG when the repo doesn't have a portrait
+        # for this bioguide (e.g. brand-new member between dev syncs). The
+        # legacy resolve() path is intentionally retired to avoid 3rd-party
+        # 302s and the stale-URL incident that motivated this rewrite.
+        return Response(
+            content=PLACEHOLDER_SVG, media_type="image/svg+xml",
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
@@ -1747,38 +1762,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         finally:
             store.close()
 
-    @app.on_event("startup")
-    async def _warm_photos():
-        # Load DB-persisted cache into memory first (instant), then probe any
-        # bioguides not yet cached (background, non-blocking).
-        import asyncio
-        import logging as _logging
-        _log = _logging.getLogger("conductor.photos")
-
-        store = get_store()
-        try:
-            n_loaded = photos_mod.load_persisted_into_memory(store)
-            _log.info("photo cache loaded from DB: %d entries", n_loaded)
-            roster = entities.list_all(store)
-        finally:
-            store.close()
-
-        bioguides = [e.bioguide_id for e in roster]
-
-        async def _bg():
-            # Open a fresh store handle for the warm task — DuckDB is process-
-            # safe but connection objects shouldn't be shared across tasks.
-            wstore = get_store()
-            try:
-                for size in ("225x275", "450x550"):
-                    counts = await photos_mod.warm_cache(
-                        bioguides, size=size, concurrency=24, store=wstore,
-                    )
-                    _log.info("photo cache warmed (%s): %s", size, counts)
-            finally:
-                wstore.close()
-
-        asyncio.create_task(_bg())
+    # _warm_photos retired — portraits live at static/photos/{bioguide}.jpg
+    # in the repo and are served directly by StaticFiles + edge CDN. No
+    # in-memory cache, no startup probe, no background warm.
 
     @app.get("/api/legislator/{bioguide}")
     def legislator_api(bioguide: str, days: int = Query(180, ge=7, le=730)):
