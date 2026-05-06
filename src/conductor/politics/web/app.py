@@ -1553,12 +1553,21 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
         Subprocess writes to a snapshot file and atomic-renames into place
         when done, so this loop never holds the main DB's write lock.
+
+        DAILY_UPDATE_DISABLE=1 is a hard kill switch — overrides the hour
+        env entirely. Use it when the workflow is "update locally + ship
+        DB via SEED_DB_URL Release" and you don't want any in-process
+        daily run firing on Railway.
         """
         import asyncio
         import logging as _logging
         import os as _os
         from datetime import datetime, time as _time, timedelta, timezone as _tz
 
+        if _os.environ.get("DAILY_UPDATE_DISABLE", "").strip() in ("1", "true", "yes"):
+            _logging.getLogger("conductor.daily").info(
+                "DAILY_UPDATE_DISABLE set — scheduler off")
+            return
         hour_env = _os.environ.get("DAILY_UPDATE_HOUR_UTC", "").strip()
         if not hour_env:
             return
@@ -1606,6 +1615,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         import os as _os
         from pathlib import Path as _Path
 
+        if _os.environ.get("DAILY_UPDATE_DISABLE", "").strip() in ("1", "true", "yes"):
+            return
         spec = _os.environ.get("DAILY_UPDATE_ON_BOOT", "").strip().lower()
         if not spec:
             return
