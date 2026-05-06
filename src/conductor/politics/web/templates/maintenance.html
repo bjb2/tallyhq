@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}TallyHQ — refreshing{% endblock %}
+{% block meta_description %}TallyHQ is refreshing the daily activity feed. Back in a moment.{% endblock %}
+
+{% block content %}
+<section class="maintenance">
+  <div class="card">
+    <svg width="64" height="64" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="1"  y="1"  width="4" height="4" rx="1" fill="#4ac26b"/>
+      <rect x="6"  y="1"  width="4" height="4" rx="1" fill="#116329"/>
+      <rect x="11" y="1"  width="4" height="4" rx="1" fill="#4ac26b"/>
+      <rect x="1"  y="6"  width="4" height="4" rx="1" fill="#aceebb"/>
+      <rect x="6"  y="6"  width="4" height="4" rx="1" fill="#1a7f37"/>
+      <rect x="11" y="6"  width="4" height="4" rx="1" fill="#116329"/>
+      <rect x="1"  y="11" width="4" height="4" rx="1" fill="#116329"/>
+      <rect x="6"  y="11" width="4" height="4" rx="1" fill="#aceebb"/>
+      <rect x="11" y="11" width="4" height="4" rx="1" fill="#1a7f37"/>
+    </svg>
+    <h1>Refreshing the activity feed.</h1>
+    <p>TallyHQ pulls fresh data from Congress every day. The site will be back in just a moment.</p>
+    <p class="muted small">Auto-retrying in <span id="rt">30</span>s. <a href="/">Refresh now</a>.</p>
+  </div>
+</section>
+
+<style>
+  main { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
+  .maintenance { width: 100%; max-width: 520px; padding: 24px; }
+  .maintenance .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px 28px;
+    text-align: center;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+  }
+  .maintenance .card svg { display: block; margin: 0 auto 16px; }
+  .maintenance h1 { font-family: 'Source Serif 4', serif; font-size: 22px; margin: 0 0 12px; color: var(--fg); }
+  .maintenance p { margin: 0 0 8px; color: var(--fg-muted); line-height: 1.5; }
+  .maintenance .muted { color: var(--fg-faint); }
+  .maintenance .small { font-size: 13px; }
+  .maintenance a { color: var(--accent); text-decoration: none; }
+  .maintenance a:hover { text-decoration: underline; }
+</style>
+
+<script>
+(function () {
+  var n = 30;
+  var el = document.getElementById('rt');
+  var t = setInterval(function () {
+    n -= 1;
+    if (el) el.textContent = n;
+    if (n <= 0) { clearInterval(t); window.location.reload(); }
+  }, 1000);
+})();
+</script>
+{% endblock %}

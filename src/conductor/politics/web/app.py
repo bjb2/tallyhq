@@ -622,25 +622,47 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return response
 
     @app.middleware("http")
-    async def _duckdb_lock_to_503(request: Request, call_next):
-        """Daily-update spawns a subprocess that holds the DuckDB write-lock for
-        the duration of the run. Web requests that try to open the DB during
-        that window crash with `_duckdb.IOException: Could not set lock ...`.
-        Convert that to a fast 503 + Retry-After so the client sees a clean
-        "syncing in progress" instead of a 500.
+    async def _duckdb_lock_to_maintenance(request: Request, call_next):
+        """Catch DuckDB write-lock conflicts and render a friendly maintenance
+        page instead of leaking the raw IOException or implementation detail.
+
+        With the snapshot-swap pattern in place this should almost never fire
+        — daily-update writes to a staging file and atomic-renames into main.
+        Kept as a defense-in-depth safety net for any other unexpected lock
+        contention (manual ops, crashed prior run, etc.).
+
+        Always returns 503 + Retry-After; never JSON; never text mentioning
+        DuckDB or daily-update by name. JSON API paths get a minimal JSON
+        body so machine clients can still parse a structured error.
         """
         import duckdb as _duckdb
         try:
             return await call_next(request)
         except _duckdb.IOException as e:
             msg = str(e)
-            if "Could not set lock" in msg or "Conflicting lock" in msg:
+            if not ("Could not set lock" in msg or "Conflicting lock" in msg):
+                raise
+            wants_json = (
+                request.url.path.startswith("/api/")
+                or "application/json" in (request.headers.get("accept") or "")
+            )
+            headers = {"Retry-After": "30", "Cache-Control": "no-store"}
+            if wants_json:
                 return JSONResponse(
-                    {"error": "syncing", "detail": "daily-update in progress, retry shortly"},
+                    {"error": "unavailable", "retry_after_seconds": 30},
                     status_code=503,
-                    headers={"Retry-After": "60"},
+                    headers=headers,
                 )
-            raise
+            try:
+                tmpl = env.get_template("maintenance.html")
+                html = tmpl.render(q=None)
+            except Exception:
+                html = (
+                    "<!doctype html><meta charset=utf-8>"
+                    "<title>TallyHQ</title>"
+                    "<p>Refreshing — back in a moment.</p>"
+                )
+            return HTMLResponse(html, status_code=503, headers=headers)
 
     @app.get("/", response_class=HTMLResponse)
     def landing(q: str | None = Query(None, max_length=80)):
