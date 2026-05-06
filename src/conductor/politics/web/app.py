@@ -513,6 +513,17 @@ def _client_ip(request: Request) -> str:
     return get_remote_address(request)
 
 
+def _table_exists(store: Store, name: str) -> bool:
+    try:
+        row = store.conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ? LIMIT 1",
+            [name],
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="TallyHQ", docs_url="/docs")
     env = _env()
@@ -563,7 +574,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return response
 
     def get_store() -> Store:
-        store = Store(db_path) if db_path else Store()
+        # Read-only is the right mode for web: every per-request query path
+        # is a SELECT. Read-only connections do not acquire DuckDB's
+        # exclusive write-lock, so they coexist with the daily-update
+        # snapshot copy without blocking it. Bootstrap paths (PVI seed,
+        # backfill adapters) open Store(..., read_only=False) explicitly.
+        store = Store(db_path, read_only=True) if db_path else Store(read_only=True)
         # Cap any single web-request query at 10s. Daily-update / CLI
         # paths use Store directly (not via this helper) so long-running
         # ingest jobs are unaffected. DuckDB raises on exceeded timeout;
@@ -1581,7 +1597,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             _log.info("BACKFILL_ADAPTERS: marker present, skipping (%s)", marker.name)
             return
         names = [n.strip() for n in spec.split(",") if n.strip()]
-        store = get_store()
+        # Backfill writes — must open R/W explicitly. get_store() is now
+        # read-only (web request mode); this path needs the writer.
+        store = Store(db_path) if db_path else Store()
         try:
             for n in names:
                 try:
@@ -1626,15 +1644,23 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         async def _bg():
             try:
                 from conductor.politics import pvi_sync as ps
-                store = get_store()
+                # Read-only probe first — coexists with web request opens.
+                ro = Store(db_path, read_only=True) if db_path else Store(read_only=True)
+                try:
+                    n = ro.conn.execute(
+                        "SELECT COUNT(*) FROM district_pvi"
+                    ).fetchone()[0] if _table_exists(ro, "district_pvi") else 0
+                finally:
+                    ro.close()
+                if n > 0:
+                    _log.info("pvi: table has %d rows, skipping bootstrap", n)
+                    return
+                # Empty -> write path. Opens R/W; will conflict with any web
+                # request handling traffic right at this moment, which is
+                # rare (boot-time + empty PVI = first deploy of new feature).
+                store = Store(db_path) if db_path else Store()
                 try:
                     ps.ensure_schema(store)
-                    n = store.conn.execute(
-                        "SELECT COUNT(*) FROM district_pvi"
-                    ).fetchone()[0]
-                    if n > 0:
-                        _log.info("pvi: table has %d rows, skipping bootstrap", n)
-                        return
                     written = ps.sync(store)
                     _log.info("pvi: bootstrap sync wrote %d rows", written)
                 finally:

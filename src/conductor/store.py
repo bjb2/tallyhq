@@ -56,11 +56,15 @@ CREATE TABLE IF NOT EXISTS cache (
 
 
 class Store:
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH):
+    def __init__(self, db_path: Path = DEFAULT_DB_PATH, *, read_only: bool = False):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
-        self.conn = duckdb.connect(str(db_path))
-        self.conn.execute(SCHEMA_SQL)
+        self.read_only = read_only
+        self.conn = duckdb.connect(str(db_path), read_only=read_only)
+        if not read_only:
+            # Schema bootstrap requires R/W. Read-only connections assume the
+            # file already has the schema (true in normal web operation).
+            self.conn.execute(SCHEMA_SQL)
 
     def close(self):
         self.conn.close()

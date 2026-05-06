@@ -488,37 +488,40 @@ def cmd_politics_bulk_bills(args, store: Store) -> int:
     return 0
 
 
-def cmd_politics_daily_update(args, store: Store) -> int:
+def cmd_politics_daily_update(args, db_path: Path) -> int:
     """Run every daily-cadence adapter, publishing via snapshot-swap.
 
     Pattern:
-      1. Close the inherited Store handle (we will not write to main DB).
-      2. Copy `main.duckdb` → `main.duckdb.staging` (file-level, no lock).
+      1. Never open `main.duckdb` from this process. Opening would acquire
+         DuckDB's exclusive write-lock and conflict with live web request
+         connections — it would fail with "Could not set lock" under any
+         meaningful traffic.
+      2. File-copy `main.duckdb` -> `main.duckdb.staging` (no DuckDB
+         involved, no lock acquired).
       3. Open Store on staging; run all adapters there.
-      4. On success, atomically rename staging → main. Web's per-request
-         connections see the new file on next open. No 503 window.
+      4. On success, `os.replace(staging, main)` — atomic rename on POSIX
+         even with readers holding open file descriptors on main (the
+         inode is preserved until last fd closes; new opens see the new
+         file).
 
     Failure modes:
       - Crash mid-run: staging file orphaned; cleaned at next run start.
         Cursors did not advance on main, so adapters resume cleanly.
       - Adapter error: caught per-adapter (existing behavior); snapshot
-        publishes regardless so partial progress is preserved. Tomorrow's
-        run picks up where this one stopped.
+        publishes regardless so partial progress is preserved.
 
-    Why not just write to main: web reads + adapter writes + analytics
-    middleware writes contend on DuckDB's per-file write lock. Snapshot
-    keeps writers off main entirely.
+    Receives `db_path` instead of a `Store` because the dispatcher must
+    not pre-open main for this command — see `_no_main_store` flag below.
     """
     import os
     import shutil
     from pathlib import Path as _Path
 
-    main_path = _Path(store.db_path).resolve()
-    store.close()  # release inherited R/W handle on main; we work on staging
+    main_path = _Path(db_path).resolve()
 
     if not main_path.exists():
         # No main yet (fresh deploy with empty volume) — write directly.
-        # Once main exists, subsequent runs use snapshot path.
+        # Subsequent runs use snapshot path.
         print(f"[daily] main DB missing at {main_path}; writing in-place", flush=True)
         run_store = Store(main_path)
         try:
@@ -561,6 +564,11 @@ def cmd_politics_daily_update(args, store: Store) -> int:
         except OSError:
             pass
     return rc
+
+
+# Tell the cli dispatcher: don't pre-open Store(main) for this command.
+# We open staging ourselves; main stays untouched at the DuckDB level.
+cmd_politics_daily_update._no_main_store = True  # type: ignore[attr-defined]
 
 
 def _run_daily_update(args, store: Store) -> int:
@@ -956,6 +964,13 @@ def main(argv: list[str] | None = None) -> int:
     # api_key query params (api.congress.gov) into logs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     db_path = _resolve_db_path(args)
+    # Some commands (daily-update under snapshot-swap) intentionally avoid
+    # opening the main DB R/W from the dispatcher because doing so contends
+    # with web request connections — the open itself fails ("Could not set
+    # lock") under live traffic. Such commands receive `db_path` directly and
+    # manage their own Store lifecycle on the file(s) they actually write to.
+    if getattr(args.func, "_no_main_store", False):
+        return args.func(args, db_path)
     store = Store(db_path=db_path)
     try:
         return args.func(args, store)
