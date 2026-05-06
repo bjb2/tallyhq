@@ -74,4 +74,6 @@ See `DEPLOY.md` for Railway setup (web service + cron service sharing one persis
 
 ## License
 
-MIT
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/). Free for personal use, research, hobby projects, and any charitable / educational / public-research / government organization. Commercial use requires a separate license — open an issue or reach out.
+
+Note: prior commits were released under MIT and remain available under those terms; relicensing governs the source from this LICENSE change forward.
