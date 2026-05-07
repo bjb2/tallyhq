@@ -181,15 +181,16 @@
 <form method="get" action="/bills" class="bills-filters">
   <input class="field grow" type="search" name="q" value="{{ q or '' }}" placeholder="Search bill titles…" />
   <span class="seg">
-    <a href="/bills" class="{% if not chamber and not kind %}active{% endif %}">All</a>
-    <a href="/bills?chamber=house" class="{% if chamber == 'house' %}active{% endif %}">House</a>
-    <a href="/bills?chamber=senate" class="{% if chamber == 'senate' %}active{% endif %}">Senate</a>
+    <a href="{{ link_with(chamber=None) }}" class="{% if not chamber %}active{% endif %}">All</a>
+    <a href="{{ link_with(chamber='house') }}" class="{% if chamber == 'house' %}active{% endif %}">House</a>
+    <a href="{{ link_with(chamber='senate') }}" class="{% if chamber == 'senate' %}active{% endif %}">Senate</a>
   </span>
   <span class="seg" title="Type of legislation">
-    <a href="/bills?kind=bills"      class="{% if kind == 'bills' %}active{% endif %}">Bills</a>
-    <a href="/bills?kind=joint"      class="{% if kind == 'joint' %}active{% endif %}">Joint res.</a>
-    <a href="/bills?kind=concurrent" class="{% if kind == 'concurrent' %}active{% endif %}">Conc. res.</a>
-    <a href="/bills?kind=simple"     class="{% if kind == 'simple' %}active{% endif %}">Simple res.</a>
+    <a href="{{ link_with(kind=None) }}"        class="{% if not kind %}active{% endif %}">All types</a>
+    <a href="{{ link_with(kind='bills') }}"     class="{% if kind == 'bills' %}active{% endif %}">Bills</a>
+    <a href="{{ link_with(kind='joint') }}"     class="{% if kind == 'joint' %}active{% endif %}">Joint res.</a>
+    <a href="{{ link_with(kind='concurrent') }}" class="{% if kind == 'concurrent' %}active{% endif %}">Conc. res.</a>
+    <a href="{{ link_with(kind='simple') }}"    class="{% if kind == 'simple' %}active{% endif %}">Simple res.</a>
   </span>
   {% if chamber %}<input type="hidden" name="chamber" value="{{ chamber }}" />{% endif %}
   {% if kind %}<input type="hidden" name="kind" value="{{ kind }}" />{% endif %}
@@ -206,7 +207,7 @@
     <option value="title" {% if sort == 'title' %}selected{% endif %}>Title A–Z</option>
   </select>
   <button class="btn" type="submit">Apply</button>
-  {% if q or chamber or policy_area or sort != 'recent' %}<a class="muted" href="/bills" style="font-size: 12px;">clear</a>{% endif %}
+  {% if q or chamber or kind or policy_area or sort != 'recent' %}<a class="muted" href="/bills" style="font-size: 12px;">clear</a>{% endif %}
 </form>
 
 {% if agg.total %}
@@ -260,7 +261,7 @@
 </div>
 
 {% if total_pages > 1 %}
-{% set qs %}{% if q %}q={{ q }}&{% endif %}{% if chamber %}chamber={{ chamber }}&{% endif %}{% if policy_area %}policy_area={{ policy_area }}&{% endif %}sort={{ sort }}&{% endset %}
+{% set qs %}{% if q %}q={{ q }}&{% endif %}{% if chamber %}chamber={{ chamber }}&{% endif %}{% if kind %}kind={{ kind }}&{% endif %}{% if policy_area %}policy_area={{ policy_area }}&{% endif %}sort={{ sort }}&{% endset %}
 <div class="pagination">
   {% if page > 1 %}<a href="?{{ qs }}page={{ page - 1 }}">←</a>{% endif %}
   {% set show_pages = [] %}

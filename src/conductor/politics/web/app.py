@@ -1006,12 +1006,23 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
         tmpl = env.get_template("bills.html")
         total_pages = (total + page_size - 1) // page_size
+
+        def link_with(**overrides):
+            from urllib.parse import urlencode
+            base = {"q": q, "chamber": chamber, "kind": kind, "policy_area": policy_area}
+            if sort and sort != "recent":
+                base["sort"] = sort
+            base.update(overrides)
+            parts = [(k, v) for k, v in base.items() if v]
+            return "/bills" + (("?" + urlencode(parts)) if parts else "")
+
         return tmpl.render(
             results=results,
             total=total,
             page=page, page_size=page_size, total_pages=total_pages,
             q=q, bill_type=bill_type, kind=kind, chamber=chamber, policy_area=policy_area, sort=sort,
             policy_areas=policy_areas,
+            link_with=link_with,
             agg={
                 "total": int(agg[0] or 0),
                 "cosp": int(agg[1] or 0),
