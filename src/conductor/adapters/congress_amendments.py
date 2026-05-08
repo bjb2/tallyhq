@@ -72,6 +72,9 @@ class CongressAmendmentsAdapter(Adapter):
         if cursor is None:
             cursor = datetime.now(tz=timezone.utc) - timedelta(days=30)
             logger.info("cold start — pulling amendments since %s", cursor.isoformat())
+        else:
+            cursor = cursor - timedelta(days=4)
+            logger.info("applying 4-day lookback overlap — pulling since %s", cursor.isoformat())
 
         offset = 0
         amendments: list[dict] = []

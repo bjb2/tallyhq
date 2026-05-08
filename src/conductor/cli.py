@@ -571,11 +571,97 @@ def cmd_politics_daily_update(args, db_path: Path) -> int:
 cmd_politics_daily_update._no_main_store = True  # type: ignore[attr-defined]
 
 
+def cmd_politics_seed_cursors(args, store: Store) -> int:
+    """Set adapter cursors from MAX(occurred_at) in existing event data.
+
+    Safe to run multiple times — only advances cursors, never rewinds them.
+    Adapters that already have a cursor ahead of the computed value are skipped.
+    """
+    import json as _json
+
+    # Source → cursor format mapper
+    # Each entry: (source_name_in_events, adapter_cursor_key, compute_fn)
+    # compute_fn(store) -> str | None  (cursor value or None to skip)
+
+    def _house_rollcalls(store: Store) -> str | None:
+        row = store.conn.execute("""
+            SELECT MAX(CAST(json_extract_string(payload, '$.year') AS INTEGER)),
+                   MAX(CAST(json_extract_string(payload, '$.rollcall_num') AS INTEGER))
+            FROM events WHERE source = 'congress_rollcalls'
+        """).fetchone()
+        if row and row[0] and row[1]:
+            return f"{row[0]}:{row[1]}"
+        return None
+
+    def _senate_rollcalls(store: Store) -> str | None:
+        row = store.conn.execute("""
+            SELECT MAX(CAST(json_extract_string(payload, '$.congress') AS INTEGER)),
+                   MAX(CAST(json_extract_string(payload, '$.session') AS INTEGER)),
+                   MAX(CAST(json_extract_string(payload, '$.rollcall_num') AS INTEGER))
+            FROM events WHERE source = 'senate_rollcalls'
+        """).fetchone()
+        if row and row[0] and row[1] and row[2]:
+            return f"{row[0]}:{row[1]}:{row[2]}"
+        return None
+
+    def _datetime_cursor(source: str):
+        def _fn(store: Store) -> str | None:
+            row = store.conn.execute(
+                "SELECT MAX(occurred_at) FROM events WHERE source = ?", [source]
+            ).fetchone()
+            if row and row[0]:
+                from datetime import timezone
+                dt = row[0]
+                if hasattr(dt, 'astimezone'):
+                    dt = dt.astimezone(timezone.utc)
+                return dt.isoformat()
+            return None
+        return _fn
+
+    def _crec_cursor(store: Store) -> str | None:
+        row = store.conn.execute(
+            "SELECT MAX(occurred_at)::DATE FROM events WHERE source = 'govinfo_crec'"
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0])
+        return None
+
+    mappings = [
+        ("congress_rollcalls", "congress_rollcalls", _house_rollcalls),
+        ("senate_rollcalls", "senate_rollcalls", _senate_rollcalls),
+        ("congress_amendments", "congress_amendments", _datetime_cursor("congress_amendments")),
+        ("congress_bill_summaries", "congress_bill_summaries", _datetime_cursor("congress_bill_summaries")),
+        ("govinfo_crec", "govinfo_crec", _crec_cursor),
+    ]
+
+    seeded = 0
+    for source, cursor_key, fn in mappings:
+        computed = fn(store)
+        if computed is None:
+            print(f"  {cursor_key:35s} SKIP (no events)")
+            continue
+        existing = store.get_cursor(cursor_key)
+        if existing and existing >= computed:
+            print(f"  {cursor_key:35s} KEEP  existing={existing}  (>= computed={computed})")
+            continue
+        store.set_cursor(cursor_key, computed)
+        print(f"  {cursor_key:35s} SET   {computed}  (was {existing or '(none)'})")
+        seeded += 1
+
+    print(f"\nSeeded {seeded} cursor(s).")
+    return 0
+
+
 def _run_daily_update(args, store: Store) -> int:
     """Run every daily-cadence adapter against `store`."""
     import asyncio
     from conductor.adapters import registry
     from conductor.http import HttpClient
+
+    # Ensure cursors are seeded from existing data so bulk-loaded events
+    # don't cause adapters to re-walk from cold start.
+    _args_stub = argparse.Namespace()
+    cmd_politics_seed_cursors(_args_stub, store)
 
     # Order matters: legislators + committees first (entity refresh), then
     # event adapters that depend on the entity table.
@@ -925,6 +1011,12 @@ def build_parser() -> argparse.ArgumentParser:
     pp_bfcrec.add_argument("--reset-cursor", action="store_true",
                            help="clear cursor so the run starts from --start-date")
     pp_bfcrec.set_defaults(func=cmd_politics_backfill_crec)
+
+    pp_sc_cursors = psub.add_parser(
+        "seed-cursors",
+        help="initialize adapter cursors from MAX(occurred_at) in existing events",
+    )
+    pp_sc_cursors.set_defaults(func=cmd_politics_seed_cursors)
 
     pp_du = psub.add_parser(
         "daily-update",

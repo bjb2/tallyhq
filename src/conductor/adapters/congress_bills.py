@@ -86,11 +86,15 @@ class CongressBillsAdapter(Adapter):
         bills_mod.ensure_schema(self.store)
 
         cursor = self._cursor()
-        # Cold start: pull last 30 days. Otherwise pull from cursor.
+        # Cold start: pull last 30 days. Otherwise pull from cursor with overlap.
         if cursor is None:
             from datetime import timedelta
             cursor = datetime.now(tz=timezone.utc) - timedelta(days=30)
             logger.info("cold start — pulling bills updated since %s", cursor.isoformat())
+        else:
+            from datetime import timedelta
+            cursor = cursor - timedelta(days=4)
+            logger.info("applying 4-day lookback overlap — pulling since %s", cursor.isoformat())
 
         offset = 0
         max_seen: datetime = cursor

@@ -22,7 +22,7 @@ needs to chase the delta from that floor forward.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 import httpx
@@ -98,6 +98,7 @@ class CongressBillSummariesAdapter(Adapter):
         ensure_schema(self.store)
 
         cursor = self._cursor_dt()
+        cursor = cursor - timedelta(days=4)
         from_str = cursor.strftime("%Y-%m-%dT%H:%M:%SZ")
         logger.info("[%s] starting — fromDateTime=%s", self.name, from_str)
 

@@ -36,6 +36,8 @@ M = "{http://www.loc.gov/mods/v3}"
 CONGRESS_119_START = date(2025, 1, 3)
 DEFAULT_DAYS_PER_PULL = int(os.environ.get("CREC_DAYS_PER_PULL", "7"))
 DEFAULT_CONCURRENCY = int(os.environ.get("CREC_CONCURRENCY", "8"))
+# Don't advance cursor past (today - N) on 404s — data may not be published yet.
+SAFE_HORIZON_DAYS = int(os.environ.get("CREC_SAFE_HORIZON_DAYS", "4"))
 
 
 def _granule_chamber(granule_class: str) -> str:
@@ -244,11 +246,18 @@ class GovInfoCrecAdapter(Adapter):
         results = await asyncio.gather(*(_fetch(d) for d in walk))
         results_by_day = {d: t for d, t in results}
 
+        safe_horizon = today - timedelta(days=SAFE_HORIZON_DAYS)
         for day in walk:
             xml_text = results_by_day.get(day)
             if xml_text is None:
-                # 404 / no session — advance cursor and continue
-                self._set_cursor(day)
+                if day <= safe_horizon:
+                    # Old enough that data would have been published by now
+                    self._set_cursor(day)
+                else:
+                    # Recent 404 — data may not be published yet; stop here
+                    # so we re-walk this day on the next run.
+                    logger.info("[govinfo_crec] %s 404 within safe horizon, stopping", day)
+                    break
                 continue
             events, stats = _parse_mods(day, xml_text)
             logger.info(
