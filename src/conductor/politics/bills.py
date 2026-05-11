@@ -64,7 +64,19 @@ def ensure_schema(store: Store) -> None:
 
 
 def upsert(store: Store, b: Bill) -> None:
+    # DELETE-then-INSERT instead of ON CONFLICT DO UPDATE. The ON CONFLICT
+    # path triggers a DuckDB 1.0.x FATAL ("Failed to append to PRIMARY_bills_0")
+    # when run against a populated bills table on Railway: conflict is detected
+    # at commit time, asserts in RevertCommit, and the FATAL is uncatchable
+    # because it corrupts the connection. DELETE removes the duplicate before
+    # INSERT so the PK index never sees a conflict.
+    #
+    # Per-row non-atomic (DELETE commits before INSERT in DuckDB auto-commit
+    # mode) — acceptable because the API is the source of truth and the next
+    # adapter run will re-insert any row that briefly vanished between DELETE
+    # and INSERT failure.
     ensure_schema(store)
+    store.conn.execute("DELETE FROM bills WHERE bill_id = ?", [b.bill_id])
     store.conn.execute(
         """
         INSERT INTO bills
@@ -72,20 +84,6 @@ def upsert(store: Store, b: Bill) -> None:
              introduced_date, latest_action_date, latest_action_text, policy_area,
              url, text_versions, cosponsor_count, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-        ON CONFLICT (bill_id) DO UPDATE SET
-            congress = excluded.congress,
-            bill_type = excluded.bill_type,
-            number = excluded.number,
-            title = excluded.title,
-            sponsor_bioguide = excluded.sponsor_bioguide,
-            introduced_date = excluded.introduced_date,
-            latest_action_date = excluded.latest_action_date,
-            latest_action_text = excluded.latest_action_text,
-            policy_area = excluded.policy_area,
-            url = excluded.url,
-            text_versions = excluded.text_versions,
-            cosponsor_count = excluded.cosponsor_count,
-            updated_at = NOW()
         """,
         [
             b.bill_id, b.congress, b.bill_type, b.number, b.title,
