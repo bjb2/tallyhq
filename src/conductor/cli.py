@@ -626,10 +626,30 @@ def cmd_politics_seed_cursors(args, store: Store) -> int:
             return str(row[0])
         return None
 
+    def _bills_cursor(store: Store) -> str | None:
+        # congress_bills cursor lives in API updateDate space. The closest local
+        # watermark is bills.updated_at — when we last wrote each row. Using
+        # MAX(updated_at) means the first incremental run only fetches bills
+        # changed since our last touch, instead of cold-starting at 30 days.
+        # The adapter's 4-day lookback overlap (congress_bills.py:96) catches
+        # any drift between our write time and the API's updateDate.
+        try:
+            row = store.conn.execute("SELECT MAX(updated_at) FROM bills").fetchone()
+        except Exception:
+            return None  # bills table not yet bootstrapped (fresh DB)
+        if row and row[0]:
+            from datetime import timezone
+            dt = row[0]
+            if hasattr(dt, 'astimezone'):
+                dt = dt.astimezone(timezone.utc)
+            return dt.isoformat()
+        return None
+
     mappings = [
         ("congress_rollcalls", "congress_rollcalls", _house_rollcalls),
         ("senate_rollcalls", "senate_rollcalls", _senate_rollcalls),
         ("congress_amendments", "congress_amendments", _datetime_cursor("congress_amendments")),
+        ("congress_bills", "congress_bills", _bills_cursor),
         ("congress_bill_summaries", "congress_bill_summaries", _datetime_cursor("congress_bill_summaries")),
         ("govinfo_crec", "govinfo_crec", _crec_cursor),
     ]
@@ -704,7 +724,8 @@ def _run_daily_update(args, store: Store) -> int:
         "congress_rollcalls",         # House — fast, no key
         "senate_rollcalls",           # Senate — fast, no key
         "congress_amendments",        # api.congress.gov, requires key
-        "congress_bill_actions",      # depends on bills already in DB
+        "congress_bills",             # fromDateTime delta, ~200 bills/pull cap
+        "congress_bill_actions",      # depends on bills already in DB (must run after congress_bills)
         "govinfo_crec",               # floor speeches, no key
         "congress_bill_summaries",    # CRS summaries — fromDateTime delta against /v3/summaries
     ]
@@ -715,8 +736,6 @@ def _run_daily_update(args, store: Store) -> int:
     # or opt in with --with-bill-text.
     if args.with_bill_text:
         daily_adapters.append("govinfo_bill_text")
-    if args.with_bills:
-        daily_adapters.insert(2, "congress_bills")  # api-key, slow
     if args.with_lda:
         daily_adapters.append("lda_senate")          # very slow without key
 
@@ -1024,8 +1043,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pp_du.add_argument("--full", action="store_true",
                        help="also re-sync legislators + committees (default: weekly on Monday)")
-    pp_du.add_argument("--with-bills", action="store_true",
-                       help="include api.congress.gov bills pull (slow, requires key)")
     pp_du.add_argument("--with-lda", action="store_true",
                        help="include LDA pull (very slow without LDA_API_KEY)")
     pp_du.add_argument("--with-bill-text", action="store_true",
