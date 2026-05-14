@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from conductor.aggregations.activity_grid import grid
@@ -1278,6 +1278,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             store.close()
         tmpl = env.get_template("rollcall.html")
         return tmpl.render(d=d, photo=lambda b: photo_url(b, "225x275"))
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        # Googlebot probes /favicon.ico at the site root directly; /static
+        # alone won't answer it. Serve the multi-size .ico from there.
+        return FileResponse(
+            STATIC_DIR / "favicon.ico",
+            media_type="image/x-icon",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     @app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
     def robots():
