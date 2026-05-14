@@ -465,6 +465,22 @@
     .day-panel .summary { padding: 8px 14px; }
     .day-panel .ev-row { padding: 10px 14px; }
   }
+
+  footer.site {
+    max-width: 1280px;
+    margin: 48px auto 0;
+    padding: 20px 24px 32px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 16px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--fg-muted);
+  }
+  footer.site nav { display: flex; gap: 16px; flex-wrap: wrap; }
+  footer.site .spacer { flex: 1; }
+  footer.site .built { color: var(--fg-faint); }
 </style>
 </head>
 <body>
@@ -501,6 +517,16 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+
+<footer class="site">
+  <nav>
+    <a href="/about">About</a>
+    <a href="/about#data">Data sources</a>
+    <a href="https://github.com/bjb2/tallyhq" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+  <span class="spacer"></span>
+  <span class="built">Built by <a href="https://fivewhys.org" target="_blank" rel="noopener">Bryan Bartley</a></span>
+</footer>
 
 <div class="day-backdrop" id="day-backdrop"></div>
 <aside class="day-panel" id="day-panel" aria-hidden="true">

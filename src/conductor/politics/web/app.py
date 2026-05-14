@@ -1279,6 +1279,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         tmpl = env.get_template("rollcall.html")
         return tmpl.render(d=d, photo=lambda b: photo_url(b, "225x275"))
 
+    @app.get("/about", response_class=HTMLResponse)
+    def about_page():
+        tmpl = env.get_template("about.html")
+        return tmpl.render()
+
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
         # Googlebot probes /favicon.ico at the site root directly; /static
@@ -1319,6 +1324,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             ("https://tallyhq.org/", "1.0"),
             ("https://tallyhq.org/browse", "0.9"),
             ("https://tallyhq.org/bills", "0.9"),
+            ("https://tallyhq.org/about", "0.4"),
         ]
         for m in members:
             urls.append((f"https://tallyhq.org/legislator/{m.bioguide_id}", "0.7"))

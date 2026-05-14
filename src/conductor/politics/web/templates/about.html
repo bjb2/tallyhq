@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}About TallyHQ — sources, method, and disclaimer{% endblock %}
+{% block meta_description %}How TallyHQ is built: official data sources, what the activity feed measures, accuracy disclaimer, and who maintains it.{% endblock %}
+{% block canonical %}https://tallyhq.org/about{% endblock %}
+{% block og_title %}About TallyHQ{% endblock %}
+{% block og_description %}How TallyHQ is built — official data sources, what the activity feed measures, and who maintains it.{% endblock %}
+{% block og_url %}https://tallyhq.org/about{% endblock %}
+{% block content %}
+<style>
+  .about { max-width: 760px; }
+  .about h1 { font-family: var(--serif); font-size: 34px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .about .lede { font-family: var(--serif); font-size: 19px; color: var(--fg-muted); margin: 0 0 32px; line-height: 1.5; }
+  .about h2 { font-family: var(--serif); font-size: 22px; font-weight: 600; margin: 36px 0 10px; }
+  .about p { line-height: 1.65; margin: 0 0 14px; }
+  .about ul { line-height: 1.65; padding-left: 22px; margin: 0 0 14px; }
+  .about li { margin-bottom: 4px; }
+  .about table.sources { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 14px; }
+  .about table.sources th, .about table.sources td { padding: 7px 10px; border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: top; }
+  .about table.sources th { color: var(--fg-muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .about table.sources td.src { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .about .disclaimer { font-size: 14px; }
+  .about .disclaimer p { margin-bottom: 10px; }
+</style>
+
+<div class="about">
+  <h1>About TallyHQ</h1>
+  <p class="lede">Congress, on the record — a GitHub-style activity tracker for the US Congress.</p>
+
+  <p>TallyHQ pulls the public record of what members of Congress actually do — every
+  roll-call vote, every bill introduced or cosponsored, every party-line break, every
+  floor speech — from official government sources, attributes it to each member, and
+  renders it as a daily activity feed. The aim is a plain, browsable record: who is doing
+  what on Capitol Hill, without a take attached.</p>
+
+  <h2>What the feed measures</h2>
+  <ul>
+    <li><strong>Roll-call votes</strong> — every recorded House and Senate vote, with party-by-party tallies and break-vote highlighting.</li>
+    <li><strong>Bills</strong> — sponsorship, cosponsorship, and the stage-coded action timeline for each bill.</li>
+    <li><strong>Floor speeches</strong> — Congressional Record entries attributed to the speaking member.</li>
+    <li><strong>Context</strong> — committee assignments, Cook PVI district lean, lobbying-disclosure activity, and campaign-finance totals, where official data exists.</li>
+  </ul>
+  <p>It does not measure influence, effectiveness, or intent. Activity volume is not a
+  quality score — a member with a quiet grid is not necessarily doing less, and the feed
+  should not be read as a ranking of merit.</p>
+
+  <h2 id="data">Data sources</h2>
+  <p>Everything on TallyHQ traces back to a primary government or public source. Nothing
+  is editorialized, scored, or hand-entered.</p>
+  <table class="sources">
+    <thead>
+      <tr><th>Source</th><th>What it provides</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="src">clerk.house.gov</td><td>House roll-call votes</td></tr>
+      <tr><td class="src">senate.gov</td><td>Senate roll-call votes</td></tr>
+      <tr><td class="src">govinfo.gov BILLSTATUS</td><td>Bill metadata, sponsors, cosponsors, action history</td></tr>
+      <tr><td class="src">govinfo.gov CREC</td><td>Floor speeches (Congressional Record)</td></tr>
+      <tr><td class="src">api.congress.gov</td><td>Amendments and bill enrichment</td></tr>
+      <tr><td class="src">lda.senate.gov</td><td>Lobbying disclosures</td></tr>
+      <tr><td class="src">api.open.fec.gov</td><td>Campaign-finance totals</td></tr>
+      <tr><td class="src">unitedstates/congress-legislators</td><td>Member roster, committee assignments, ID crosswalks</td></tr>
+      <tr><td class="src">unitedstates/images</td><td>Member portraits</td></tr>
+      <tr><td class="src">en.wikipedia.org</td><td>Cook Partisan Voting Index per district and state</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Accuracy &amp; disclaimer</h2>
+  <div class="disclaimer muted">
+    <p>TallyHQ is an independent, non-commercial project. It is not affiliated with,
+    endorsed by, or speaking for the United States Congress, any member or office, or any
+    government agency.</p>
+    <p>The data is aggregated automatically from the sources above and refreshed daily.
+    Upstream sources can be delayed, revised, or incomplete, and the matching that links
+    records to members and bills is automated and imperfect — lobbying-activity matches in
+    particular are best-effort and surfaced with a confidence filter. TallyHQ is provided
+    as-is, with no warranty of accuracy, completeness, or fitness for any particular
+    purpose. For anything consequential, verify against the primary source before relying
+    on it.</p>
+    <p>Found something wrong? <a href="https://github.com/bjb2/tallyhq/issues" target="_blank" rel="noopener">Open an issue</a> — corrections are welcome.</p>
+  </div>
+
+  <h2>Who maintains it</h2>
+  <p>TallyHQ is built and maintained by <a href="https://fivewhys.org" target="_blank" rel="noopener">Bryan Bartley</a>.
+  The source is on <a href="https://github.com/bjb2/tallyhq" target="_blank" rel="noopener">GitHub</a>.</p>
+</div>
+{% endblock %}
