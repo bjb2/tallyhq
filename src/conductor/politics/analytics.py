@@ -159,6 +159,12 @@ class AnalyticsStore:
         self.db_path = db_path or default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = duckdb.connect(str(self.db_path))
+        # Sidecar DB — tiny INSERT-per-request workload. Cap aggressively so it
+        # doesn't double the buffer-pool footprint alongside the main DB.
+        # See knowledge/tools/duckdb-default-memory-limit-ignores-cgroups.md
+        self.conn.execute("SET memory_limit = '128MB'")
+        self.conn.execute("SET threads = 2")
+        self.conn.execute("SET temp_directory = '/tmp/duckdb-analytics'")
         self.conn.execute(SCHEMA_SQL)
 
     def close(self):

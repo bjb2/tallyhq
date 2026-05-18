@@ -61,6 +61,13 @@ class Store:
         self.db_path = db_path
         self.read_only = read_only
         self.conn = duckdb.connect(str(db_path), read_only=read_only)
+        # DuckDB defaults memory_limit to 80% of HOST RAM and threads to host
+        # core count. In containers /proc reflects the host, not the cgroup,
+        # so the buffer pool grows to multi-GB on Railway. Cap explicitly.
+        # See knowledge/tools/duckdb-default-memory-limit-ignores-cgroups.md
+        self.conn.execute("SET memory_limit = '512MB'")
+        self.conn.execute("SET threads = 2")
+        self.conn.execute("SET temp_directory = '/tmp/duckdb-conductor'")
         if not read_only:
             # Schema bootstrap requires R/W. Read-only connections assume the
             # file already has the schema (true in normal web operation).
