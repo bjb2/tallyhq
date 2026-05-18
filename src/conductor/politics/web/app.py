@@ -1296,7 +1296,28 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
     def robots():
+        # Explicitly block commercial backlink crawlers and Meta's AI-training
+        # crawler. These three accounted for ~93% of bot traffic and 0% of
+        # human-facing value as of 2026-05. Blocked at robots.txt because all
+        # three publicly honor it per their docs. AI search bots (GPTBot,
+        # ClaudeBot, PerplexityBot, OAI-SearchBot, etc.) are intentionally
+        # NOT blocked — they drive downstream human traffic from LLM answers.
         return (
+            "# Commercial backlink / SEO crawlers — no value to us, high load.\n"
+            "User-agent: MJ12bot\n"
+            "Disallow: /\n"
+            "\n"
+            "User-agent: serpstatbot\n"
+            "Disallow: /\n"
+            "\n"
+            "# Meta's AI training crawler — high load, no traffic back.\n"
+            "User-agent: meta-externalagent\n"
+            "Disallow: /\n"
+            "\n"
+            "User-agent: Meta-ExternalAgent\n"
+            "Disallow: /\n"
+            "\n"
+            "# Default policy for everyone else (incl. search + LLM search bots).\n"
             "User-agent: *\n"
             "Allow: /\n"
             "Disallow: /api/\n"

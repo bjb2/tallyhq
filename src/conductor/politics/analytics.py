@@ -269,21 +269,37 @@ class AnalyticsStore:
             f"""
             SELECT
                 CASE
+                    -- Traditional search
                     WHEN ua ILIKE '%googlebot%'         THEN 'Googlebot'
                     WHEN ua ILIKE '%bingbot%'           THEN 'Bingbot'
+                    WHEN ua ILIKE '%applebot%'          THEN 'Applebot'
+                    WHEN ua ILIKE '%duckduckbot%'       THEN 'DuckDuckBot'
+                    WHEN ua ILIKE '%yandex%'            THEN 'YandexBot'
+                    -- LLM training crawlers
                     WHEN ua ILIKE '%gptbot%'            THEN 'GPTBot'
                     WHEN ua ILIKE '%claudebot%'         THEN 'ClaudeBot'
+                    WHEN ua ILIKE '%ccbot%'             THEN 'CCBot'
+                    WHEN ua ILIKE '%meta-externalagent%' THEN 'Meta-ExternalAgent'
+                    WHEN ua ILIKE '%meta-webindexer%'   THEN 'Meta-WebIndexer'
+                    -- LLM search / on-demand fetchers (drive human downstream traffic)
+                    WHEN ua ILIKE '%oai-search%'        THEN 'OAI-SearchBot'
+                    WHEN ua ILIKE '%chatgpt-user%'      THEN 'ChatGPT-User'
                     WHEN ua ILIKE '%perplexitybot%'     THEN 'PerplexityBot'
-                    WHEN ua ILIKE '%applebot%'          THEN 'Applebot'
+                    WHEN ua ILIKE '%xai-search%'        THEN 'xAI-SearchBot'
                     WHEN ua ILIKE '%amazonbot%'         THEN 'Amazonbot'
+                    -- SEO / backlink commercial crawlers (zero value to us)
                     WHEN ua ILIKE '%semrush%'           THEN 'SemrushBot'
                     WHEN ua ILIKE '%ahrefs%'            THEN 'AhrefsBot'
+                    WHEN ua ILIKE '%mj12bot%'           THEN 'MJ12bot'
+                    WHEN ua ILIKE '%serpstatbot%'       THEN 'serpstatbot'
                     WHEN ua ILIKE '%bytespider%'        THEN 'Bytespider'
+                    -- Social link unfurlers
                     WHEN ua ILIKE '%facebookexternalhit%' THEN 'Facebook'
                     WHEN ua ILIKE '%twitterbot%'        THEN 'Twitterbot'
                     WHEN ua ILIKE '%slackbot%'          THEN 'Slackbot'
                     WHEN ua ILIKE '%linkedinbot%'       THEN 'LinkedInBot'
                     WHEN ua ILIKE '%discordbot%'        THEN 'Discordbot'
+                    -- Dev / scripted clients
                     WHEN ua ILIKE '%curl%'              THEN 'curl'
                     WHEN ua ILIKE '%python-requests%'   THEN 'python-requests'
                     WHEN ua ILIKE '%httpx%'             THEN 'httpx'
@@ -295,7 +311,7 @@ class AnalyticsStore:
               AND is_bot
             GROUP BY bot_name
             ORDER BY n DESC
-            LIMIT 15
+            LIMIT 20
             """
         ).fetchall()
 
