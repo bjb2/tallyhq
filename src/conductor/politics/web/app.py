@@ -570,6 +570,8 @@ def _bootstrap_all_schemas(db_path: Path | None) -> None:
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
+    import asyncio
+
     # Pre-bootstrap all schemas while a R/W Store is briefly held.
     # Required before any read-only request connection touches the DB.
     _bootstrap_all_schemas(db_path)
@@ -584,6 +586,20 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     limiter = Limiter(key_func=_client_ip)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # DuckDB's memory_limit is per connection. Keep concurrent DB-backed
+    # request work bounded so a traffic burst cannot multiply buffer pools
+    # into multi-GB steady RSS. Static assets stay outside the gate.
+    db_concurrency = max(1, int(os.environ.get("WEB_DUCKDB_CONCURRENCY", "2")))
+    db_gate = asyncio.Semaphore(db_concurrency)
+
+    @app.middleware("http")
+    async def _limit_db_backed_requests(request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/static/") or path in ("/favicon.ico", "/robots.txt"):
+            return await call_next(request)
+        async with db_gate:
+            return await call_next(request)
 
     # --- Security headers ----------------------------------------------
     @app.middleware("http")

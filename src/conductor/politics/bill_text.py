@@ -545,7 +545,7 @@ def load_diff(store: "Store", bill_id: str, from_code: str,
                           tuple(from_lines), tuple(to_lines))
 
 
-@functools.lru_cache(maxsize=512)
+@functools.lru_cache(maxsize=int(os.environ.get("BILL_DIFF_CACHE_SIZE", "32")))
 def _render_cached(bill_id: str, from_code: str, to_code: str,
                    from_lines: tuple[str, ...],
                    to_lines: tuple[str, ...]) -> tuple[str, DiffStats]:

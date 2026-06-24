@@ -10,6 +10,7 @@ Dedupe: an Event is only inserted if no prior row exists with matching
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -65,8 +66,13 @@ class Store:
         # core count. In containers /proc reflects the host, not the cgroup,
         # so the buffer pool grows to multi-GB on Railway. Cap explicitly.
         # See knowledge/tools/duckdb-default-memory-limit-ignores-cgroups.md
-        self.conn.execute("SET memory_limit = '512MB'")
-        self.conn.execute("SET threads = 2")
+        memory_limit = os.environ.get(
+            "CONDUCTOR_DUCKDB_READONLY_MEMORY_LIMIT" if read_only else "CONDUCTOR_DUCKDB_MEMORY_LIMIT",
+            "128MB" if read_only else "512MB",
+        )
+        threads = int(os.environ.get("CONDUCTOR_DUCKDB_THREADS", "2"))
+        self.conn.execute(f"SET memory_limit = '{memory_limit}'")
+        self.conn.execute(f"SET threads = {threads}")
         self.conn.execute("SET temp_directory = '/tmp/duckdb-conductor'")
         if not read_only:
             # Schema bootstrap requires R/W. Read-only connections assume the

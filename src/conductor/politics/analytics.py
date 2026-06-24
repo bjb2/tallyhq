@@ -162,7 +162,8 @@ class AnalyticsStore:
         # Sidecar DB — tiny INSERT-per-request workload. Cap aggressively so it
         # doesn't double the buffer-pool footprint alongside the main DB.
         # See knowledge/tools/duckdb-default-memory-limit-ignores-cgroups.md
-        self.conn.execute("SET memory_limit = '128MB'")
+        memory_limit = os.environ.get("ANALYTICS_DUCKDB_MEMORY_LIMIT", "32MB")
+        self.conn.execute(f"SET memory_limit = '{memory_limit}'")
         self.conn.execute("SET threads = 2")
         self.conn.execute("SET temp_directory = '/tmp/duckdb-analytics'")
         self.conn.execute(SCHEMA_SQL)
