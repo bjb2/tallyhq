@@ -1,5 +1,8 @@
 # Deploying TallyHQ to Railway
 
+> **CDN:** Cloudflare sits in front of Railway as cache + bot filter.
+> See [CLOUDFLARE.md](CLOUDFLARE.md) — origin architecture below is unchanged.
+
 Two services share one Dockerfile + one persistent volume.
 
 ```

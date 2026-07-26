@@ -593,6 +593,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     db_concurrency = max(1, int(os.environ.get("WEB_DUCKDB_CONCURRENCY", "2")))
     db_gate = asyncio.Semaphore(db_concurrency)
 
+    # How long a shared (CDN) cache may hold a page. Default 24h: the data
+    # only moves on the nightly daily-update, and the deploy purges the edge
+    # afterwards. Set EDGE_TTL_SECONDS=0 to disable edge caching entirely.
+    EDGE_TTL_SECONDS = max(0, int(os.environ.get("EDGE_TTL_SECONDS", "86400")))
+    EDGE_SWR_SECONDS = max(0, int(os.environ.get("EDGE_SWR_SECONDS", "604800")))
+
     @app.middleware("http")
     async def _limit_db_backed_requests(request: Request, call_next):
         path = request.url.path
@@ -743,6 +749,55 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                     "<p>Refreshing — back in a moment.</p>"
                 )
             return HTMLResponse(html, status_code=503, headers=headers)
+
+    # --- Edge cache policy ---------------------------------------------
+    # Registered last, so it is the OUTERMOST middleware and sees the final
+    # response. Uses setdefault for the cacheable case, so routes that
+    # already chose a policy win: the 503 maintenance path (no-store) and
+    # the photo/favicon routes (public, max-age=86400) are left untouched.
+    #
+    # Why this exists: every page is recomputed from DuckDB per request, but
+    # the underlying data only changes once nightly (daily-update at
+    # $DAILY_UPDATE_HOUR_UTC). Without a Cache-Control header a CDN will not
+    # hold HTML at all, so crawlers — which are ~84% of traffic — each cost a
+    # full query. See CLOUDFLARE.md.
+    #
+    # max-age=0 keeps browsers revalidating so a reader never sees a stale
+    # page after the nightly swap; s-maxage is what the edge actually holds.
+    # stale-while-revalidate lets the edge serve the previous copy while it
+    # refetches, so no reader waits on a cold query.
+    HTML_CACHE = (
+        f"public, max-age=0, s-maxage={EDGE_TTL_SECONDS}, "
+        f"stale-while-revalidate={EDGE_SWR_SECONDS}"
+    )
+    NOT_FOUND_CACHE = "public, max-age=0, s-maxage=3600"
+
+    @app.middleware("http")
+    async def _edge_cache_headers(request: Request, call_next):
+        response = await call_next(request)
+
+        # /stats is token-gated and per-visitor; never let it touch a shared
+        # cache. Set explicitly (not setdefault) — the route sets no header
+        # of its own, and a leaked stats page would expose the token in the
+        # cached URL alongside visitor data.
+        if request.url.path.startswith("/stats"):
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+
+        # Mutations (LLM changelog summary) are never cacheable.
+        if request.method != "GET":
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        if response.status_code == 200:
+            response.headers.setdefault("Cache-Control", HTML_CACHE)
+        elif response.status_code == 404:
+            # Absorb crawler probing for paths that do not exist.
+            response.headers.setdefault("Cache-Control", NOT_FOUND_CACHE)
+        else:
+            # 5xx / 429 / redirects: do not let an error pin to the edge.
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     def landing(q: str | None = Query(None, max_length=80)):
@@ -1605,7 +1660,49 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             _log.info("daily| %s", line.decode("utf-8", errors="replace").rstrip())
         rc = await proc.wait()
         _log.info("daily-update exited %s", rc)
+        if rc == 0:
+            await _purge_edge_cache()
         return rc
+
+    async def _purge_edge_cache() -> bool:
+        """Flush the CDN edge cache after a successful daily-update.
+
+        Pages carry s-maxage=86400, so without this the edge would keep
+        serving yesterday's HTML for up to a day after the snapshot swap.
+        Purging on write inverts that: hold pages indefinitely, drop them
+        the moment the data actually moves.
+
+        No-op unless both CLOUDFLARE_ZONE_ID and CLOUDFLARE_PURGE_TOKEN are
+        set, so local dev and any non-CDN deploy are unaffected. Failure is
+        logged, never raised — a missed purge costs freshness, not uptime,
+        and must not fail the update that just succeeded.
+        """
+        import logging as _logging
+        import os as _os
+
+        _log = _logging.getLogger("conductor.daily")
+        zone = _os.environ.get("CLOUDFLARE_ZONE_ID", "").strip()
+        token = _os.environ.get("CLOUDFLARE_PURGE_TOKEN", "").strip()
+        if not zone or not token:
+            _log.info("edge purge skipped — CLOUDFLARE_ZONE_ID/PURGE_TOKEN unset")
+            return False
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"https://api.cloudflare.com/client/v4/zones/{zone}/purge_cache",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"purge_everything": True},
+                )
+            if resp.status_code == 200 and resp.json().get("success"):
+                _log.info("edge cache purged")
+                return True
+            # Body carries Cloudflare's error array — the useful part when a
+            # token is missing the Cache Purge permission or the zone is wrong.
+            _log.error("edge purge failed: HTTP %s %s", resp.status_code, resp.text[:300])
+        except Exception as e:
+            _log.error("edge purge error: %s", e)
+        return False
 
     @app.on_event("startup")
     async def _schedule_daily_update():
